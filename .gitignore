@@ -1,0 +1,82 @@
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+
+# ─── Virtual Environments ─────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ─── Environment Variables ────────────────────────────────────────────────────
+.env
+# Keep the example template:
+!.env.example
+
+# ─── Data (raw and processed data stays local) ────────────────────────────────
+data/raw/
+data/processed/
+data/chunks/
+data/embeddings/
+# Allow placeholder files:
+!data/**/.gitkeep
+
+# ─── MLflow ───────────────────────────────────────────────────────────────────
+experiments/mlflow/
+mlruns/
+mlartifacts/
+
+# ─── Jupyter Notebooks ────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ─── IDE & OS ─────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.DS_Store
+Thumbs.db
+.cursor/
+
+# ─── Windows Zone Identifier (ADS metadata from downloads) ────────────────────
+*:Zone.Identifier
+
+# ─── Models & Large Files ─────────────────────────────────────────────────────
+*.bin
+*.pt
+*.pth
+*.onnx
+*.pkl
+*.pickle
+*.h5
+*.safetensors
+*.gguf
+
+# ─── Vector Store / Databases ─────────────────────────────────────────────────
+chroma_db/
+chromadb_data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+
+# ─── Test & Coverage ──────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# ─── Temp ─────────────────────────────────────────────────────────────────────
+tmp/
+temp/
+*.tmp
