@@ -17,3 +17,7 @@ NZZ_API_KEY     = ""
 
 # ── Preprocessing ─────────────────────────────────────────────────────────────
 MIN_TEXT_LENGTH = 100   # Artikel kürzer als X Zeichen werden gefiltert
+
+# ── Chunking ──────────────────────────────────────────────────────────────────
+CHUNK_SIZE    = 200   # Wörter pro Chunk
+CHUNK_OVERLAP = 50    # Überlappung zwischen Chunks in Wörtern
