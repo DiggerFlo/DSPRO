@@ -4,22 +4,20 @@ import uuid
 import pandas as pd
 from config import CHUNK_SIZE, CHUNK_OVERLAP
 
-def chunk_article(row: pd.Series) -> list:
-    """Split a single article into overlapping word-level chunks."""
-    words = row["body"].split()
+def chunk_article(row: pd.Series) -> list[dict]:
+    words  = row["body"].split()
     chunks = []
-    start = 0
-    index = 0
-    
+    start  = 0
+    index  = 0
+
     while start < len(words):
-        end = start + CHUNK_SIZE
-        chunk_text = " ".join(words[start:end])
-        
-        if len(chunk_text.split()) > 20:
-            # Here we generate a unique article ID based on the title and the first 50 characters of the body
+        end        = start + CHUNK_SIZE
+        chunk_text = row["title"] + ". " + " ".join(words[start:end])  # Titel voranstellen
+
+        if len(chunk_text.strip()) > 20:
             article_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, row["title"] + row["body"][:50]))
             chunks.append({
-                 "article_id":  article_id,
+                "article_id":  article_id,
                 "chunk_id":    f"{article_id}-{index}",
                 "chunk_index": index,
                 "chunk_text":  chunk_text,
@@ -27,9 +25,9 @@ def chunk_article(row: pd.Series) -> list:
                 "category":    row["category"],
             })
             index += 1
-        
+
         start += CHUNK_SIZE - CHUNK_OVERLAP
-        
+
     return chunks
 
 def chunk_dataframe(df: pd.DataFrame) -> pd.DataFrame:

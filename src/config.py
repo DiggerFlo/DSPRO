@@ -25,3 +25,9 @@ CHUNK_OVERLAP = 50    # Überlappung zwischen Chunks in Wörtern
 # ── Embedding ─────────────────────────────────────────────────────────────────
 # pick model from https://huggingface.co/spaces/mteb/leaderboard (Wichtig: schauen das es muli ling ist oder nur deutsch)
 EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
+
+# ── Retrieval ─────────────────────────────────────────────────────────────────
+RERANKER_MODEL = "cross-encoder/msmarco-MiniLM-L6-en-de-v1"
+
+# ── Reranking ─────── ─────────────────────────────────────────────────────────
+USE_RERANKING = False
