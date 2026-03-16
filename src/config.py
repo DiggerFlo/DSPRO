@@ -21,3 +21,7 @@ MIN_TEXT_LENGTH = 100   # Artikel kürzer als X Zeichen werden gefiltert
 # ── Chunking ──────────────────────────────────────────────────────────────────
 CHUNK_SIZE    = 200   # Wörter pro Chunk
 CHUNK_OVERLAP = 50    # Überlappung zwischen Chunks in Wörtern
+
+# ── Embedding ─────────────────────────────────────────────────────────────────
+# pick model from https://huggingface.co/spaces/mteb/leaderboard (Wichtig: schauen das es muli ling ist oder nur deutsch)
+EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
