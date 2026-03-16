@@ -4,10 +4,6 @@ import re
 import pandas as pd
 from config import DATA_SOURCE, KAGGLE_TRAIN, KAGGLE_TEST, MIN_TEXT_LENGTH
 
-def preprocess() -> None:
-    """Clean and normalize articles from data/raw/ into data/processed/."""
-    raise NotImplementedError("Implement preprocessing logic here.")
-
 def load_dataset(split: str = "train") -> pd.DataFrame:
     if DATA_SOURCE == "kaggle":
         path = KAGGLE_TRAIN if split == "train" else KAGGLE_TEST

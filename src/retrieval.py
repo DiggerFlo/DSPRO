@@ -3,7 +3,6 @@ import os
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from supabase import create_client, Client
-from config import EMBEDDING_MODEL
 from config import EMBEDDING_MODEL, RERANKER_MODEL
 
 load_dotenv()
