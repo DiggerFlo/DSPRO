@@ -22,7 +22,7 @@ def load_model(model_name: str) -> SentenceTransformer:
 def embed_chunks(model: SentenceTransformer, texts: list[str]) -> list[list[float]]:
     """Generate embeddings for a list of texts."""
     print(f"Generiere Embeddings für {len(texts)} Chunks...")
-    prefixed = [f"passage {t}" for t in texts]
+    prefixed = [f"passage: {t}" for t in texts]
     embedding = model.encode(
         prefixed,
         batch_size=32,
