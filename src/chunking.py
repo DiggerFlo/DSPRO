@@ -10,20 +10,28 @@ def chunk_article(row: pd.Series) -> list[dict]:
     start  = 0
     index  = 0
 
+    # article_id: NZZ liefert eine echte ID, Kaggle nicht
+    article_id = str(
+        row.get("article_id")
+        or uuid.uuid5(uuid.NAMESPACE_DNS, row["title"] + row["body"][:50])
+    )
+
     while start < len(words):
         end        = start + CHUNK_SIZE
-        chunk_text = row["title"] + ". " + " ".join(words[start:end])  # Titel voranstellen
+        chunk_text = row["title"] + ". " + " ".join(words[start:end])
 
         if len(chunk_text.strip()) > 20:
-            article_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, row["title"] + row["body"][:50]))
-            chunks.append({
-                "article_id":  article_id,
-                "chunk_id":    f"{article_id}-{index}",
-                "chunk_index": index,
-                "chunk_text":  chunk_text,
-                "title":       row["title"],
-                "category":    row["category"],
-            })
+            chunk: dict = {
+                "article_id":     article_id,
+                "chunk_id":       f"{article_id}-{index}",
+                "chunk_index":    index,
+                "chunk_text":     chunk_text,
+                "title":          row["title"],
+                "category":       row.get("category", ""),
+                "author":         row.get("author", ""),
+                "published_date": row.get("published_date", ""),
+            }
+            chunks.append(chunk)
             index += 1
 
         start += CHUNK_SIZE - CHUNK_OVERLAP

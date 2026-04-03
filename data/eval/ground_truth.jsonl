@@ -1,2 +1,14 @@
-{"query": "Welche Forderungen stellt die Gewerkschaft GPA-djp zu All-in-Verträgen?", "relevant_article_ids": ["ARTICLE_UUID_HIER_EINTRAGEN"], "expected_answer": null}
-{"query": "Wie hat sich Chelsea in der Champions League gegen PSG geschlagen?", "relevant_article_ids": ["ARTICLE_UUID_HIER_EINTRAGEN"], "expected_answer": null}
+{"query": "Was erwarten Schweizer Anlageprofis für die Börsenmärkte im Jahr 2026?", "relevant_article_ids": ["336541061"], "expected_answer": null}
+{"query": "Werden in der Schweiz wieder Negativzinsen eingeführt?", "relevant_article_ids": ["336541061"], "expected_answer": null}
+{"query": "Wie verhält sich Putins Kriegsführung im Vergleich zu Stalin?", "relevant_article_ids": ["336531094"], "expected_answer": null}
+{"query": "Was zeigen sowjetische Archivdokumente über die Denkweise russischer Führungspersönlichkeiten?", "relevant_article_ids": ["336531094"], "expected_answer": null}
+{"query": "Wie werden ukrainische Kinder in Russland umerzogen?", "relevant_article_ids": ["336520888"], "expected_answer": null}
+{"query": "Russland verschleppt ukrainische Kinder und gibt sie zur Adoption frei", "relevant_article_ids": ["336520888"], "expected_answer": null}
+{"query": "Ukrainischer Freiwilliger birgt tote russische Soldaten vom Schlachtfeld", "relevant_article_ids": ["336536063"], "expected_answer": null}
+{"query": "Menschlichkeit im Krieg: Umgang mit gefallenen Feinden im Donbass", "relevant_article_ids": ["336536063"], "expected_answer": null}
+{"query": "Wie hat sich die Schweiz für die Zurückweisung jüdischer Flüchtlinge im Zweiten Weltkrieg entschuldigt?", "relevant_article_ids": ["336553040"], "expected_answer": null}
+{"query": "Kaspar Villiger Entschuldigung Bundesrat Holocaust 1995", "relevant_article_ids": ["336553040"], "expected_answer": null}
+{"query": "Warum kann man Grundstücke besitzen und wie entstand das Eigentumsrecht an Land?", "relevant_article_ids": ["296024981"], "expected_answer": null}
+{"query": "Geschichte des Landbesitzes Schweiz Immobilienpreise Eigentumsrecht", "relevant_article_ids": ["296024981"], "expected_answer": null}
+{"query": "Wie beeinflusst künstliche Intelligenz das menschliche Denken und Urteilsvermögen?", "relevant_article_ids": ["336544085"], "expected_answer": null}
+{"query": "Menschliche Dummheit und Kognitionsforschung im Zeitalter von KI", "relevant_article_ids": ["336544085"], "expected_answer": null}

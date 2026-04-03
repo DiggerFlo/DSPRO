@@ -1,6 +1,6 @@
 # ── Data Source ───────────────────────────────────────────────────────────────
-#switch between kaggle and nzz api
-DATA_SOURCE = "kaggle"  # "kaggle" | "nzz_api"
+# "kaggle" | "nzz_json"
+DATA_SOURCE = "nzz_json"
 
 import os
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -11,9 +11,13 @@ KAGGLE_TRAIN    = os.path.join(BASE_DIR, "data", "raw", "train.csv")
 KAGGLE_TEST     = os.path.join(BASE_DIR, "data", "raw", "test.csv")
 KAGGLE_ARTICLES = os.path.join(BASE_DIR, "data", "raw", "articles.csv")
 
-# ── NZZ API Settings (noch nicht aktiv) ──────────────────────────────────────
-NZZ_API_URL     = "placeholder"   
-NZZ_API_KEY     = ""                      
+# ── NZZ JSON Settings ─────────────────────────────────────────────────────────
+# Glob-Muster für alle Monats-Dateien, z.B. articles_2025_12.json
+NZZ_JSON_GLOB = os.path.join(BASE_DIR, "data", "raw", "articles_*.json")
+
+# ── ChromaDB ──────────────────────────────────────────────────────────────────
+CHROMA_PATH       = os.path.join(BASE_DIR, "data", "chroma")
+CHROMA_COLLECTION = "chunks"
 
 # ── Preprocessing ─────────────────────────────────────────────────────────────
 MIN_TEXT_LENGTH = 100   # Artikel kürzer als X Zeichen werden gefiltert

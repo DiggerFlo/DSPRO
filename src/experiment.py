@@ -15,8 +15,11 @@ from config import (
     EVAL_TOP_K_RETRIEVAL,
     EVAL_TOP_K_FINAL,
     ENABLE_GENERATION_EVAL,
+    CHROMA_PATH,
+    CHROMA_COLLECTION,
 )
-from retrieval import retrieve, get_supabase_client
+from embed import get_chroma_collection
+from retrieval import retrieve
 from evaluate import load_ground_truth, evaluate_retrieval, evaluate_answers
 
 
@@ -35,22 +38,22 @@ def run_experiment(run_name: str = None) -> None:
         print("Keine Ground-Truth-Daten gefunden. Bitte data/eval/ground_truth.jsonl befüllen.")
         return
 
-    client   = get_supabase_client()
-    model    = SentenceTransformer(EMBEDDING_MODEL)
-    reranker = CrossEncoder(RERANKER_MODEL) if USE_RERANKING else None
+    collection = get_chroma_collection(CHROMA_PATH, CHROMA_COLLECTION)
+    model      = SentenceTransformer(EMBEDDING_MODEL)
+    reranker   = CrossEncoder(RERANKER_MODEL) if USE_RERANKING else None
 
     with mlflow.start_run(run_name=run_name):
 
         mlflow.log_params({
-            "embedding_model":       EMBEDDING_MODEL,
-            "reranker_model":        RERANKER_MODEL if USE_RERANKING else "none",
-            "use_reranking":         USE_RERANKING,
-            "chunk_size":            CHUNK_SIZE,
-            "chunk_overlap":         CHUNK_OVERLAP,
-            "top_k_retrieval":       EVAL_TOP_K_RETRIEVAL,
-            "top_k_final":           EVAL_TOP_K_FINAL,
-            "generation_eval":       ENABLE_GENERATION_EVAL,
-            "num_eval_samples":      len(ground_truth),
+            "embedding_model":   EMBEDDING_MODEL,
+            "reranker_model":    RERANKER_MODEL if USE_RERANKING else "none",
+            "use_reranking":     USE_RERANKING,
+            "chunk_size":        CHUNK_SIZE,
+            "chunk_overlap":     CHUNK_OVERLAP,
+            "top_k_retrieval":   EVAL_TOP_K_RETRIEVAL,
+            "top_k_final":       EVAL_TOP_K_FINAL,
+            "generation_eval":   ENABLE_GENERATION_EVAL,
+            "num_eval_samples":  len(ground_truth),
         })
 
         retrieval_metrics_per_query  = []
@@ -63,7 +66,7 @@ def run_experiment(run_name: str = None) -> None:
             results = retrieve(
                 query,
                 model,
-                client,
+                collection,
                 reranker,
                 top_k_retrieval=EVAL_TOP_K_RETRIEVAL,
                 top_k_rerank=EVAL_TOP_K_FINAL,
@@ -97,7 +100,7 @@ def run_experiment(run_name: str = None) -> None:
             for k, v in avg_generation.items():
                 print(f"    {k}: {v:.4f}")
 
-        print(f"\nMLflow UI starten: mlflow ui --backend-store-uri {MLFLOW_TRACKING_URI}")
+        print(f"\nMLflow UI: mlflow ui --backend-store-uri {MLFLOW_TRACKING_URI}")
 
 
 if __name__ == "__main__":
