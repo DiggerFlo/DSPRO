@@ -9,15 +9,21 @@ from embed import get_chroma_collection
 
 def load_models(use_reranking: bool = False) -> tuple:
     """Load embedding model and optionally the reranker."""
-    model    = SentenceTransformer(EMBEDDING_MODEL)
+    model    = SentenceTransformer(EMBEDDING_MODEL, trust_remote_code=True)
     reranker = CrossEncoder(RERANKER_MODEL) if use_reranking else None
     return model, reranker
 
 
+_QUERY_INSTRUCTION = (
+    "Instruct: Gegeben eine Suchanfrage auf Deutsch, finde relevante Nachrichtenartikel "
+    "aus dem NZZ-Archiv, die die Frage beantworten.\nQuery: "
+)
+
+
 def embed_query(model: SentenceTransformer, query: str) -> list[float]:
-    """Embed a user query with the same model used for documents."""
+    """Embed a user query with a Qwen3-style task instruction."""
     embedding = model.encode(
-        f"query: {query}",
+        _QUERY_INSTRUCTION + query,
         normalize_embeddings=True,
     )
     return embedding.tolist()

@@ -39,7 +39,7 @@ def run_experiment(run_name: str = None) -> None:
         return
 
     collection = get_chroma_collection(CHROMA_PATH, CHROMA_COLLECTION)
-    model      = SentenceTransformer(EMBEDDING_MODEL)
+    model      = SentenceTransformer(EMBEDDING_MODEL, trust_remote_code=True)
     reranker   = CrossEncoder(RERANKER_MODEL) if USE_RERANKING else None
 
     with mlflow.start_run(run_name=run_name):

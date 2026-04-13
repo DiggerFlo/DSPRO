@@ -46,7 +46,7 @@ def chunk_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(all_chunks)
 
 if __name__ == "__main__":
-    from preprocessing import load_dataset, preprocess
+    from preprocess import load_dataset, preprocess
     train = preprocess(load_dataset("train"))
     chunks = chunk_dataframe(train)
     print(f"Chunks: {len(chunks)}")
