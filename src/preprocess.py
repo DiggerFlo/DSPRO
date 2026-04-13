@@ -5,7 +5,7 @@ import glob
 import json
 from html.parser import HTMLParser
 import pandas as pd
-from config import DATA_SOURCE, KAGGLE_TRAIN, KAGGLE_TEST, MIN_TEXT_LENGTH, NZZ_JSON_GLOB
+from config import MIN_TEXT_LENGTH, NZZ_JSON_GLOB
 
 
 # ── HTML Stripping ────────────────────────────────────────────────────────────
@@ -38,27 +38,8 @@ def strip_html(html: str) -> str:
 
 # ── Loaders ───────────────────────────────────────────────────────────────────
 
-def load_dataset(split: str = "train") -> pd.DataFrame:
-    if DATA_SOURCE == "kaggle":
-        path = KAGGLE_TRAIN if split == "train" else KAGGLE_TEST
-        return _load_kaggle(path)
-    elif DATA_SOURCE == "nzz_json":
-        return _load_nzz_json()  # glob_pattern=None → alle Monate
-    else:
-        raise ValueError(f"Unbekannte DATA_SOURCE: {DATA_SOURCE}")
-
-
-def _load_kaggle(path: str) -> pd.DataFrame:
-    rows = []
-    with open(path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            parts = line.split(";", 1)
-            if len(parts) == 2:
-                rows.append({"category": parts[0], "text": parts[1]})
-    return pd.DataFrame(rows)
+def load_dataset() -> pd.DataFrame:
+    return _load_nzz_json()
 
 
 def _load_nzz_json(glob_pattern: str = None) -> pd.DataFrame:
@@ -110,16 +91,6 @@ def _load_nzz_json(glob_pattern: str = None) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-# ── Text Utilities ────────────────────────────────────────────────────────────
-
-def extract_title_and_body(text: str) -> tuple[str, str]:
-    """Nur für Kaggle-Daten: Titel aus erstem Satz extrahieren."""
-    parts = text.split(". ", 1)
-    if len(parts) == 2:
-        return parts[0].strip(), parts[1].strip()
-    return text[:80].strip(), text.strip()
-
-
 def clean_text(text: str) -> str:
     text = text.replace("\n", " ")
     text = re.sub(r"\s+", " ", text)
@@ -130,21 +101,8 @@ def clean_text(text: str) -> str:
 
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
-
-    if "text" in df.columns:
-        # Kaggle-Pfad: Titel/Body noch zusammen in "text"
-        df = df.dropna(subset=["text"])
-        df["text"] = df["text"].apply(clean_text)
-        df = df[df["text"].str.len() > MIN_TEXT_LENGTH]
-        df[["title", "body"]] = df["text"].apply(
-            lambda t: pd.Series(extract_title_and_body(t))
-        )
-        df = df.drop(columns=["text"])
-    else:
-        # NZZ-Pfad: Titel/Body bereits getrennt
-        df = df.dropna(subset=["body"])
-        df["body"] = df["body"].apply(clean_text)
-        df = df[df["body"].str.len() > MIN_TEXT_LENGTH]
-
+    df = df.dropna(subset=["body"])
+    df["body"] = df["body"].apply(clean_text)
+    df = df[df["body"].str.len() > MIN_TEXT_LENGTH]
     df = df.reset_index(drop=True)
     return df

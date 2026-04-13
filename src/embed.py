@@ -89,6 +89,7 @@ if __name__ == "__main__":
         print("Lade alle Monate …")
         df = preprocess(load_dataset())
 
+
     collection = get_chroma_collection(CHROMA_PATH, CHROMA_COLLECTION)
     model      = load_model(EMBEDDING_MODEL)
 

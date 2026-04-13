@@ -1,18 +1,8 @@
-# ── Data Source ───────────────────────────────────────────────────────────────
-# "kaggle" | "nzz_json"
-DATA_SOURCE = "nzz_json"
-
 import os
+
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
-# ── Kaggle Settings ───────────────────────────────────────────────────────────
-KAGGLE_DATASET  = "tblock/10kgnad"
-KAGGLE_TRAIN    = os.path.join(BASE_DIR, "data", "raw", "train.csv")
-KAGGLE_TEST     = os.path.join(BASE_DIR, "data", "raw", "test.csv")
-KAGGLE_ARTICLES = os.path.join(BASE_DIR, "data", "raw", "articles.csv")
-
-# ── NZZ JSON Settings ─────────────────────────────────────────────────────────
-# Glob-Muster für alle Monats-Dateien, z.B. articles_2025_12.json
+# ── Datenquelle ───────────────────────────────────────────────────────────────
 NZZ_JSON_GLOB = os.path.join(BASE_DIR, "data", "raw", "articles_*.json")
 
 # ── ChromaDB ──────────────────────────────────────────────────────────────────
@@ -23,25 +13,23 @@ CHROMA_COLLECTION = "chunks"
 MIN_TEXT_LENGTH = 100   # Artikel kürzer als X Zeichen werden gefiltert
 
 # ── Chunking ──────────────────────────────────────────────────────────────────
-CHUNK_SIZE    = 500   # Wörter pro Chunk
-CHUNK_OVERLAP = 125    # Überlappung zwischen Chunks in Wörtern
+CHUNK_SIZE    = 500     # Wörter pro Chunk
+CHUNK_OVERLAP = 125     # Überlappung zwischen Chunks in Wörtern
 
 # ── Embedding ─────────────────────────────────────────────────────────────────
-# pick model from https://huggingface.co/spaces/mteb/leaderboard (Wichtig: schauen das es muli ling ist oder nur deutsch)
+# Modell-Auswahl: https://huggingface.co/spaces/mteb/leaderboard
 EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 
-# ── Retrieval ─────────────────────────────────────────────────────────────────
-RERANKER_MODEL = "cross-encoder/msmarco-MiniLM-L6-en-de-v1"
-
-# ── Reranking ─────── ─────────────────────────────────────────────────────────
-USE_RERANKING = False
+# ── Retrieval & Reranking ─────────────────────────────────────────────────────
+RERANKER_MODEL    = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+USE_RERANKING     = True
 
 # ── MLflow ────────────────────────────────────────────────────────────────────
-MLFLOW_TRACKING_URI   = f"sqlite:///{os.path.join(BASE_DIR, 'mlflow.db')}"
-MLFLOW_EXPERIMENT     = "rag-evaluation"
+MLFLOW_TRACKING_URI = f"sqlite:///{os.path.join(BASE_DIR, 'mlflow.db')}"
+MLFLOW_EXPERIMENT   = "rag-evaluation"
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
-EVAL_GROUND_TRUTH     = os.path.join(BASE_DIR, "data", "eval", "ground_truth.jsonl")
-EVAL_TOP_K_RETRIEVAL  = 20   # Kandidaten die aus Supabase geholt werden
-EVAL_TOP_K_FINAL      = 5    # Nach Reranking / finale Trefferzahl
-ENABLE_GENERATION_EVAL = False  # Auf True setzen sobald generate.py implementiert ist
+EVAL_GROUND_TRUTH      = os.path.join(BASE_DIR, "data", "eval", "ground_truth.jsonl")
+EVAL_TOP_K_RETRIEVAL   = 20   # Kandidaten aus ChromaDB
+EVAL_TOP_K_FINAL       = 5    # Nach Reranking
+ENABLE_GENERATION_EVAL = False

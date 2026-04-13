@@ -41,9 +41,10 @@ mlartifacts/
 # ─── IDE & OS ─────────────────────────────────────────────────────────────────
 .idea/
 .vscode/
+.cursor/
+.claude/
 *.DS_Store
 Thumbs.db
-.cursor/
 
 # ─── Windows Zone Identifier (ADS metadata from downloads) ────────────────────
 *:Zone.Identifier
@@ -60,12 +61,10 @@ Thumbs.db
 *.gguf
 
 # ─── Vector Store / Databases ─────────────────────────────────────────────────
-chroma_db/
-chromadb_data/
+data/chroma/
 *.db
 *.sqlite
 *.sqlite3
-.DS_Store
 
 # ─── Logs ─────────────────────────────────────────────────────────────────────
 logs/
