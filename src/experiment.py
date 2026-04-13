@@ -1,5 +1,11 @@
 """MLflow experiment runner — evaluates the full RAG pipeline."""
 
+import csv
+import io
+import tempfile
+import os
+from datetime import datetime
+
 import mlflow
 from sentence_transformers import SentenceTransformer, CrossEncoder
 
@@ -29,6 +35,18 @@ def _average(list_of_dicts: list[dict]) -> dict:
     return {k: sum(d[k] for d in list_of_dicts) / n for k in keys}
 
 
+def _print_results_table(rows: list[dict]) -> None:
+    """Print a readable per-query results table to stdout."""
+    header = f"  {'Query':<52} {'H@1':>4} {'H@3':>4} {'H@5':>4} {'MRR':>6}"
+    print(header)
+    print("  " + "─" * (len(header) - 2))
+    for r in rows:
+        h1  = "✓" if r["hit_at_1"]  else "✗"
+        h3  = "✓" if r["hit_at_3"]  else "✗"
+        h5  = "✓" if r["hit_at_5"]  else "✗"
+        print(f"  {r['query']:<52} {h1:>4} {h3:>4} {h5:>4} {r['mrr']:>6.3f}")
+
+
 def run_experiment(run_name: str = None) -> None:
     mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
     mlflow.set_experiment(MLFLOW_EXPERIMENT)
@@ -42,22 +60,25 @@ def run_experiment(run_name: str = None) -> None:
     model      = SentenceTransformer(EMBEDDING_MODEL, trust_remote_code=True)
     reranker   = CrossEncoder(RERANKER_MODEL) if USE_RERANKING else None
 
+    if run_name is None:
+        run_name = datetime.now().strftime("%Y-%m-%d_%H-%M")
+
     with mlflow.start_run(run_name=run_name):
 
         mlflow.log_params({
-            "embedding_model":   EMBEDDING_MODEL,
-            "reranker_model":    RERANKER_MODEL if USE_RERANKING else "none",
-            "use_reranking":     USE_RERANKING,
-            "chunk_size":        CHUNK_SIZE,
-            "chunk_overlap":     CHUNK_OVERLAP,
-            "top_k_retrieval":   EVAL_TOP_K_RETRIEVAL,
-            "top_k_final":       EVAL_TOP_K_FINAL,
-            "generation_eval":   ENABLE_GENERATION_EVAL,
-            "num_eval_samples":  len(ground_truth),
+            "embedding_model":  EMBEDDING_MODEL,
+            "reranker_model":   RERANKER_MODEL if USE_RERANKING else "none",
+            "use_reranking":    USE_RERANKING,
+            "chunk_size":       CHUNK_SIZE,
+            "chunk_overlap":    CHUNK_OVERLAP,
+            "top_k_retrieval":  EVAL_TOP_K_RETRIEVAL,
+            "top_k_final":      EVAL_TOP_K_FINAL,
+            "num_eval_samples": len(ground_truth),
         })
 
-        retrieval_metrics_per_query  = []
-        generation_metrics_per_query = []
+        per_query_rows            = []
+        retrieval_metrics_list    = []
+        generation_metrics_list   = []
 
         for sample in ground_truth:
             query        = sample["query"]
@@ -71,36 +92,70 @@ def run_experiment(run_name: str = None) -> None:
                 top_k_retrieval=EVAL_TOP_K_RETRIEVAL,
                 top_k_rerank=EVAL_TOP_K_FINAL,
             )
-            retrieval_metrics_per_query.append(
-                evaluate_retrieval(results, relevant_ids, k=EVAL_TOP_K_FINAL)
-            )
+
+            metrics = evaluate_retrieval(results, relevant_ids, k=EVAL_TOP_K_FINAL)
+            retrieval_metrics_list.append(metrics)
+
+            per_query_rows.append({
+                "query":    query[:55],
+                "hit_at_1": metrics["hit_at_1"],
+                "hit_at_3": metrics["hit_at_3"],
+                "hit_at_5": metrics[f"hit_at_{EVAL_TOP_K_FINAL}"],
+                "mrr":      metrics["mrr"],
+                "top1_article": results[0]["article_id"] if results else "",
+                "top1_title":   results[0]["title"][:60] if results else "",
+                "top1_score":   round(results[0].get("similarity_score", 0), 3) if results else 0,
+            })
 
             if ENABLE_GENERATION_EVAL:
                 expected = sample.get("expected_answer")
                 if expected:
                     from generate import generate
                     answer = generate(query, results)
-                    generation_metrics_per_query.append(
-                        evaluate_answers(answer, expected)
-                    )
+                    generation_metrics_list.append(evaluate_answers(answer, expected))
 
-        avg_retrieval = _average(retrieval_metrics_per_query)
-        mlflow.log_metrics(avg_retrieval)
+        # ── Durchschnittliche Metriken loggen ──────────────────────────────────
+        avg = _average(retrieval_metrics_list)
+        mlflow.log_metrics(avg)
 
-        if generation_metrics_per_query:
-            avg_generation = _average(generation_metrics_per_query)
-            mlflow.log_metrics(avg_generation)
+        if generation_metrics_list:
+            mlflow.log_metrics(_average(generation_metrics_list))
 
-        print("\nExperiment abgeschlossen:")
-        print("  Retrieval:")
-        for k, v in avg_retrieval.items():
-            print(f"    {k}: {v:.4f}")
-        if generation_metrics_per_query:
-            print("  Generation:")
-            for k, v in avg_generation.items():
-                print(f"    {k}: {v:.4f}")
+        # ── Per-Query CSV als Artifact speichern ───────────────────────────────
+        csv_buffer = io.StringIO()
+        writer = csv.DictWriter(csv_buffer, fieldnames=per_query_rows[0].keys())
+        writer.writeheader()
+        writer.writerows(per_query_rows)
 
-        print(f"\nMLflow UI: mlflow ui --backend-store-uri {MLFLOW_TRACKING_URI}")
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv",
+                                         delete=False, encoding="utf-8") as f:
+            f.write(csv_buffer.getvalue())
+            tmp_path = f.name
+
+        mlflow.log_artifact(tmp_path, artifact_path="eval")
+        os.unlink(tmp_path)
+
+        # ── Ausgabe ───────────────────────────────────────────────────────────
+        print(f"\n{'═' * 65}")
+        print(f"  Experiment: {MLFLOW_EXPERIMENT}  |  Run: {run_name}")
+        print(f"{'═' * 65}")
+        print(f"  Chunks in DB:   {collection.count():,}")
+        print(f"  Eval-Queries:   {len(ground_truth)}")
+        print(f"  Reranking:      {'an' if USE_RERANKING else 'aus'}")
+        print(f"{'─' * 65}")
+        print()
+        _print_results_table(per_query_rows)
+        print()
+        print(f"{'─' * 65}")
+        print(f"  Hit@1:  {avg['hit_at_1']:.0%}   "
+              f"Hit@3:  {avg['hit_at_3']:.0%}   "
+              f"Hit@{EVAL_TOP_K_FINAL}: {avg[f'hit_at_{EVAL_TOP_K_FINAL}']:.0%}   "
+              f"MRR:  {avg['mrr']:.3f}")
+        print(f"  Precision@{EVAL_TOP_K_FINAL}: {avg[f'precision_at_{EVAL_TOP_K_FINAL}']:.3f}   "
+              f"Recall@{EVAL_TOP_K_FINAL}: {avg[f'recall_at_{EVAL_TOP_K_FINAL}']:.3f}   "
+              f"NDCG@{EVAL_TOP_K_FINAL}: {avg[f'ndcg_at_{EVAL_TOP_K_FINAL}']:.3f}")
+        print(f"{'═' * 65}")
+        print(f"\n  MLflow UI → http://localhost:5000\n")
 
 
 if __name__ == "__main__":

@@ -13,8 +13,8 @@ CHROMA_COLLECTION = "chunks"
 MIN_TEXT_LENGTH = 100   # Artikel kürzer als X Zeichen werden gefiltert
 
 # ── Chunking ──────────────────────────────────────────────────────────────────
-CHUNK_SIZE    = 500     # Wörter pro Chunk
-CHUNK_OVERLAP = 125     # Überlappung zwischen Chunks in Wörtern
+CHUNK_SIZE    = 1000    # Wörter pro Chunk
+CHUNK_OVERLAP = 250     # Überlappung zwischen Chunks in Wörtern
 
 # ── Embedding ─────────────────────────────────────────────────────────────────
 # Modell-Auswahl: https://huggingface.co/spaces/mteb/leaderboard
