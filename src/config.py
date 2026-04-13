@@ -28,6 +28,11 @@ USE_RERANKING     = True
 MLFLOW_TRACKING_URI = f"sqlite:///{os.path.join(BASE_DIR, 'mlflow.db')}"
 MLFLOW_EXPERIMENT   = "rag-evaluation"
 
+# ── LLM / Generation ──────────────────────────────────────────────────────────
+LLM_MODEL       = "llama3.1:8b"
+LLM_TEMPERATURE = 0.2
+LLM_MAX_TOKENS  = 1500
+
 # ── Evaluation ────────────────────────────────────────────────────────────────
 EVAL_GROUND_TRUTH      = os.path.join(BASE_DIR, "data", "eval", "ground_truth.jsonl")
 EVAL_TOP_K_RETRIEVAL   = 20   # Kandidaten aus ChromaDB
