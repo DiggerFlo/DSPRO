@@ -29,6 +29,7 @@ from config import (
 )
 from embed import get_chroma_collection
 from retrieval import retrieve
+from generate import generate
 from evaluate import load_ground_truth, evaluate_retrieval, evaluate_answers, evaluate_faithfulness
 
 
@@ -121,7 +122,6 @@ def run_experiment(run_name: str = None) -> None:
             if ENABLE_GENERATION_EVAL:
                 expected = sample.get("expected_answer")
                 if expected:
-                    from generate import generate
                     answer = generate(query, results)
                     gen_metrics = {
                         **evaluate_answers(answer, expected),
