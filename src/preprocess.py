@@ -3,37 +3,16 @@
 import re
 import glob
 import json
-from html.parser import HTMLParser
+from bs4 import BeautifulSoup
 import pandas as pd
 from config import MIN_TEXT_LENGTH, NZZ_JSON_GLOB
 
 
 # ── HTML Stripping ────────────────────────────────────────────────────────────
 
-class _TextExtractor(HTMLParser):
-    """Extracts plain text from HTML, inserting spaces between block elements."""
-
-    BLOCK_TAGS = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "br", "div", "blockquote"}
-
-    def __init__(self):
-        super().__init__()
-        self._parts: list[str] = []
-
-    def handle_starttag(self, tag, attrs):
-        if tag in self.BLOCK_TAGS:
-            self._parts.append(" ")
-
-    def handle_data(self, data):
-        self._parts.append(data)
-
-    def get_text(self) -> str:
-        return re.sub(r"\s+", " ", "".join(self._parts)).strip()
-
-
 def strip_html(html: str) -> str:
-    parser = _TextExtractor()
-    parser.feed(html or "")
-    return parser.get_text()
+    soup = BeautifulSoup(html or "", "html.parser")
+    return re.sub(r"\s+", " ", soup.get_text(separator=" ")).strip()
 
 
 # ── Loaders ───────────────────────────────────────────────────────────────────

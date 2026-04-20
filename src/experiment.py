@@ -35,16 +35,18 @@ def _average(list_of_dicts: list[dict]) -> dict:
     return {k: sum(d[k] for d in list_of_dicts) / n for k in keys}
 
 
-def _print_results_table(rows: list[dict]) -> None:
+def _print_results_table(rows: list[dict], show_generation: bool = False) -> None:
     """Print a readable per-query results table to stdout."""
-    header = f"  {'Query':<52} {'H@1':>4} {'H@3':>4} {'H@5':>4} {'MRR':>6}"
+    gen_col = f" {'ROUGE':>6}" if show_generation else ""
+    header = f"  {'Query':<52} {'H@1':>4} {'H@3':>4} {'H@5':>4} {'MRR':>6}{gen_col}"
     print(header)
     print("  " + "─" * (len(header) - 2))
     for r in rows:
         h1  = "✓" if r["hit_at_1"]  else "✗"
         h3  = "✓" if r["hit_at_3"]  else "✗"
         h5  = "✓" if r["hit_at_5"]  else "✗"
-        print(f"  {r['query']:<52} {h1:>4} {h3:>4} {h5:>4} {r['mrr']:>6.3f}")
+        gen_val = f" {r.get('rouge_l_approx', 0):>6.3f}" if show_generation else ""
+        print(f"  {r['query']:<52} {h1:>4} {h3:>4} {h5:>4} {r['mrr']:>6.3f}{gen_val}")
 
 
 def run_experiment(run_name: str = None) -> None:
@@ -112,7 +114,10 @@ def run_experiment(run_name: str = None) -> None:
                 if expected:
                     from generate import generate
                     answer = generate(query, results)
-                    generation_metrics_list.append(evaluate_answers(answer, expected))
+                    gen_metrics = evaluate_answers(answer, expected)
+                    generation_metrics_list.append(gen_metrics)
+                    per_query_rows[-1]["generated_answer"] = answer
+                    per_query_rows[-1]["rouge_l_approx"]   = round(gen_metrics["rouge_l_approx"], 3)
 
         # ── Durchschnittliche Metriken loggen ──────────────────────────────────
         avg = _average(retrieval_metrics_list)
@@ -144,7 +149,8 @@ def run_experiment(run_name: str = None) -> None:
         print(f"  Reranking:      {'an' if USE_RERANKING else 'aus'}")
         print(f"{'─' * 65}")
         print()
-        _print_results_table(per_query_rows)
+        has_gen = bool(generation_metrics_list)
+        _print_results_table(per_query_rows, show_generation=has_gen)
         print()
         print(f"{'─' * 65}")
         print(f"  Hit@1:  {avg['hit_at_1']:.0%}   "
@@ -154,6 +160,9 @@ def run_experiment(run_name: str = None) -> None:
         print(f"  Precision@{EVAL_TOP_K_FINAL}: {avg[f'precision_at_{EVAL_TOP_K_FINAL}']:.3f}   "
               f"Recall@{EVAL_TOP_K_FINAL}: {avg[f'recall_at_{EVAL_TOP_K_FINAL}']:.3f}   "
               f"NDCG@{EVAL_TOP_K_FINAL}: {avg[f'ndcg_at_{EVAL_TOP_K_FINAL}']:.3f}")
+        if has_gen:
+            avg_gen = _average(generation_metrics_list)
+            print(f"  ROUGE-L (approx):  {avg_gen['rouge_l_approx']:.3f}")
         print(f"{'═' * 65}")
         print(f"\n  MLflow UI → http://localhost:5000\n")
 
