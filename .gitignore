@@ -1,40 +1,33 @@
 # ─── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
-*$py.class
 *.so
 *.egg
 *.egg-info/
 dist/
 build/
-.eggs/
-.Python
 
-# ─── Virtual Environments ─────────────────────────────────────────────────────
+# ─── Virtual Environment ──────────────────────────────────────────────────────
 .venv/
 venv/
 env/
-ENV/
 
 # ─── Environment Variables ────────────────────────────────────────────────────
 .env
-# Keep the example template:
 !.env.example
 
-# ─── Data (raw and processed data stays local) ────────────────────────────────
+# ─── Data ─────────────────────────────────────────────────────────────────────
 data/raw/
-data/processed/
-data/chunks/
-data/embeddings/
-# Allow placeholder files:
-!data/**/.gitkeep
+data/chroma/
 
 # ─── MLflow ───────────────────────────────────────────────────────────────────
-experiments/mlflow/
 mlruns/
 mlartifacts/
+*.db
+*.sqlite
+*.sqlite3
 
-# ─── Jupyter Notebooks ────────────────────────────────────────────────────────
+# ─── Jupyter ──────────────────────────────────────────────────────────────────
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
@@ -45,11 +38,9 @@ mlartifacts/
 .claude/
 *.DS_Store
 Thumbs.db
-
-# ─── Windows Zone Identifier (ADS metadata from downloads) ────────────────────
 *:Zone.Identifier
 
-# ─── Models & Large Files ─────────────────────────────────────────────────────
+# ─── Large model files ────────────────────────────────────────────────────────
 *.bin
 *.pt
 *.pth
@@ -60,27 +51,13 @@ Thumbs.db
 *.safetensors
 *.gguf
 
-# ─── Vector Store / Databases ─────────────────────────────────────────────────
-data/chroma/
-*.db
-*.sqlite
-*.sqlite3
-
-# ─── Logs ─────────────────────────────────────────────────────────────────────
+# ─── Logs & Temp ──────────────────────────────────────────────────────────────
 logs/
 *.log
+tmp/
+*.tmp
 
-# ─── Test & Coverage ──────────────────────────────────────────────────────────
+# ─── Tests ────────────────────────────────────────────────────────────────────
 .pytest_cache/
 .coverage
 htmlcov/
-coverage.xml
-
-# ─── Temp ─────────────────────────────────────────────────────────────────────
-tmp/
-temp/
-*.tmp
-
-# ─── Kaggle ─────────────────────────────────────────────────────────────────────
-kaggle.json
-.kaggle/
