@@ -90,3 +90,20 @@ def _token_overlap_f1(predicted: str, expected: str) -> float:
 def evaluate_answers(predicted: str, expected: str) -> dict:
     """Token-overlap F1 as a lightweight proxy for ROUGE-L."""
     return {"rouge_l_approx": _token_overlap_f1(predicted, expected)}
+
+
+def evaluate_faithfulness(answer: str, context_chunks: list[dict]) -> dict:
+    """Measures how grounded the answer is in the retrieved context.
+
+    Computed as the fraction of answer tokens (length > 3) that appear
+    in the concatenated chunk texts — a proxy for hallucination detection.
+    Score of 1.0 = fully grounded, 0.0 = no overlap with sources.
+    """
+    context_tokens = set(
+        " ".join(c["chunk_text"] for c in context_chunks).lower().split()
+    )
+    answer_tokens = [t for t in answer.lower().split() if len(t) > 3]
+    if not answer_tokens:
+        return {"faithfulness": 0.0}
+    supported = sum(1 for t in answer_tokens if t in context_tokens)
+    return {"faithfulness": supported / len(answer_tokens)}

@@ -23,10 +23,13 @@ from config import (
     ENABLE_GENERATION_EVAL,
     CHROMA_PATH,
     CHROMA_COLLECTION,
+    LLM_MODEL,
+    LLM_TEMPERATURE,
+    LLM_MAX_TOKENS,
 )
 from embed import get_chroma_collection
 from retrieval import retrieve
-from evaluate import load_ground_truth, evaluate_retrieval, evaluate_answers
+from evaluate import load_ground_truth, evaluate_retrieval, evaluate_answers, evaluate_faithfulness
 
 
 def _average(list_of_dicts: list[dict]) -> dict:
@@ -37,15 +40,16 @@ def _average(list_of_dicts: list[dict]) -> dict:
 
 def _print_results_table(rows: list[dict], show_generation: bool = False) -> None:
     """Print a readable per-query results table to stdout."""
-    gen_col = f" {'ROUGE':>6}" if show_generation else ""
-    header = f"  {'Query':<52} {'H@1':>4} {'H@3':>4} {'H@5':>4} {'MRR':>6}{gen_col}"
+    gen_cols = f" {'ROUGE':>6} {'Faith':>6}" if show_generation else ""
+    header = f"  {'Query':<52} {'H@1':>4} {'H@3':>4} {'H@5':>4} {'MRR':>6}{gen_cols}"
     print(header)
     print("  " + "─" * (len(header) - 2))
     for r in rows:
         h1  = "✓" if r["hit_at_1"]  else "✗"
         h3  = "✓" if r["hit_at_3"]  else "✗"
         h5  = "✓" if r["hit_at_5"]  else "✗"
-        gen_val = f" {r.get('rouge_l_approx', 0):>6.3f}" if show_generation else ""
+        gen_val = (f" {r.get('rouge_l_approx', 0):>6.3f}"
+                   f" {r.get('faithfulness', 0):>6.3f}") if show_generation else ""
         print(f"  {r['query']:<52} {h1:>4} {h3:>4} {h5:>4} {r['mrr']:>6.3f}{gen_val}")
 
 
@@ -75,7 +79,12 @@ def run_experiment(run_name: str = None) -> None:
             "chunk_overlap":    CHUNK_OVERLAP,
             "top_k_retrieval":  EVAL_TOP_K_RETRIEVAL,
             "top_k_final":      EVAL_TOP_K_FINAL,
-            "num_eval_samples": len(ground_truth),
+            "num_eval_queries": len(ground_truth),
+            "chunks_in_db":     collection.count(),
+            "months_indexed":   "all",
+            "llm_model":        LLM_MODEL,
+            "llm_temperature":  LLM_TEMPERATURE,
+            "llm_max_tokens":   LLM_MAX_TOKENS,
         })
 
         per_query_rows            = []
@@ -114,10 +123,14 @@ def run_experiment(run_name: str = None) -> None:
                 if expected:
                     from generate import generate
                     answer = generate(query, results)
-                    gen_metrics = evaluate_answers(answer, expected)
+                    gen_metrics = {
+                        **evaluate_answers(answer, expected),
+                        **evaluate_faithfulness(answer, results),
+                    }
                     generation_metrics_list.append(gen_metrics)
                     per_query_rows[-1]["generated_answer"] = answer
                     per_query_rows[-1]["rouge_l_approx"]   = round(gen_metrics["rouge_l_approx"], 3)
+                    per_query_rows[-1]["faithfulness"]     = round(gen_metrics["faithfulness"], 3)
 
         # ── Durchschnittliche Metriken loggen ──────────────────────────────────
         avg = _average(retrieval_metrics_list)
@@ -162,7 +175,9 @@ def run_experiment(run_name: str = None) -> None:
               f"NDCG@{EVAL_TOP_K_FINAL}: {avg[f'ndcg_at_{EVAL_TOP_K_FINAL}']:.3f}")
         if has_gen:
             avg_gen = _average(generation_metrics_list)
-            print(f"  ROUGE-L (approx):  {avg_gen['rouge_l_approx']:.3f}")
+            print(f"  ROUGE-L (approx):  {avg_gen['rouge_l_approx']:.3f}   "
+                  f"Faithfulness:  {avg_gen['faithfulness']:.3f}")
+            print(f"  LLM: {LLM_MODEL}  |  Temp: {LLM_TEMPERATURE}  |  Max-Tokens: {LLM_MAX_TOKENS}")
         print(f"{'═' * 65}")
         print(f"\n  MLflow UI → http://localhost:5000\n")
 
