@@ -3,7 +3,7 @@
 import os
 import ollama
 
-from config import LLM_MODEL, LLM_TEMPERATURE, LLM_MAX_TOKENS
+from config import LLM_MODEL, LLM_TEMPERATURE, LLM_MAX_TOKENS, LLM_KEEP_ALIVE
 
 _PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 
@@ -60,6 +60,7 @@ def generate(query: str, context_chunks: list[dict]) -> str:
     response = ollama.chat(
         model=LLM_MODEL,
         options={"temperature": LLM_TEMPERATURE, "num_predict": LLM_MAX_TOKENS},
+        keep_alive=LLM_KEEP_ALIVE,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_message},

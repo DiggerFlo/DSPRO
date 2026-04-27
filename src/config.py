@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
@@ -29,12 +32,14 @@ MLFLOW_TRACKING_URI = f"sqlite:///{os.path.join(BASE_DIR, 'mlflow.db')}"
 MLFLOW_EXPERIMENT   = "rag-evaluation"
 
 # ── LLM / Generation ──────────────────────────────────────────────────────────
-LLM_MODEL       = "gemma4"
+LLM_MODEL       = "llama3.1:8b"   # schneller als gemma4 (9.6 GB); für höhere Qualität: "gemma4"
 LLM_TEMPERATURE = 0.2
-LLM_MAX_TOKENS  = 1500
+LLM_MAX_TOKENS  = 1200
+LLM_THINK       = False   # Thinking-Modus deaktivieren — spart ~25s pro Anfrage
+LLM_KEEP_ALIVE  = -1      # Modell permanent im VRAM halten (kein Kaltstart)
 
 # ── Evaluation ────────────────────────────────────────────────────────────────
 EVAL_GROUND_TRUTH      = os.path.join(BASE_DIR, "data", "eval", "ground_truth.jsonl")
-EVAL_TOP_K_RETRIEVAL   = 20   # Kandidaten aus ChromaDB
+EVAL_TOP_K_RETRIEVAL   = 10   # Kandidaten aus ChromaDB (vorher 20 — halbiert Reranking-Zeit)
 EVAL_TOP_K_FINAL       = 5    # Nach Reranking
 ENABLE_GENERATION_EVAL = True

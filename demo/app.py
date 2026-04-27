@@ -11,7 +11,7 @@ import ollama
 from config import (
     CHROMA_PATH, CHROMA_COLLECTION,
     USE_RERANKING, EVAL_TOP_K_RETRIEVAL, EVAL_TOP_K_FINAL,
-    LLM_MODEL, LLM_TEMPERATURE, LLM_MAX_TOKENS,
+    LLM_MODEL, LLM_TEMPERATURE, LLM_MAX_TOKENS, LLM_KEEP_ALIVE,
 )
 from embed import get_chroma_collection
 from retrieval import load_models, retrieve
@@ -29,6 +29,13 @@ st.set_page_config(
 def load_pipeline():
     collection      = get_chroma_collection(CHROMA_PATH, CHROMA_COLLECTION)
     model, reranker = load_models(use_reranking=USE_RERANKING)
+    # Ollama-Modell vorladen damit die erste Anfrage nicht kalt startet
+    ollama.chat(
+        model=LLM_MODEL,
+        keep_alive=LLM_KEEP_ALIVE,
+        messages=[{"role": "user", "content": "ping"}],
+        options={"num_predict": 1},
+    )
     return collection, model, reranker
 
 collection, embed_model, reranker = load_pipeline()
@@ -95,6 +102,7 @@ if query := st.chat_input("Ihre Frage an das NZZ-Archiv..."):
         for chunk in ollama.chat(
             model=LLM_MODEL,
             options={"temperature": LLM_TEMPERATURE, "num_predict": LLM_MAX_TOKENS},
+            keep_alive=LLM_KEEP_ALIVE,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": user_message},
