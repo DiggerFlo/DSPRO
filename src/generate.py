@@ -12,10 +12,34 @@ def _load_prompt(filename: str) -> str:
         return f.read().strip()
 
 
+def _merge_chunks_by_article(chunks: list[dict]) -> list[dict]:
+    """Merge chunks from the same article into a single entry, preserving retrieval order."""
+    seen_articles: dict[str, dict] = {}
+    ordered_ids: list[str] = []
+
+    for chunk in chunks:
+        aid = chunk["article_id"]
+        if aid not in seen_articles:
+            seen_articles[aid] = {**chunk, "_chunk_parts": [(chunk["chunk_index"], chunk["chunk_text"])]}
+            ordered_ids.append(aid)
+        else:
+            seen_articles[aid]["_chunk_parts"].append((chunk["chunk_index"], chunk["chunk_text"]))
+
+    merged = []
+    for aid in ordered_ids:
+        entry = seen_articles[aid]
+        parts = sorted(entry["_chunk_parts"], key=lambda x: x[0])
+        entry["chunk_text"] = "\n\n[...]\n\n".join(text for _, text in parts)
+        del entry["_chunk_parts"]
+        merged.append(entry)
+    return merged
+
+
 def _build_context(chunks: list[dict]) -> str:
-    """Format retrieved chunks as a numbered context block."""
+    """Format retrieved chunks as a numbered context block, merging chunks from the same article."""
+    merged = _merge_chunks_by_article(chunks)
     parts = []
-    for i, chunk in enumerate(chunks, start=1):
+    for i, chunk in enumerate(merged, start=1):
         meta = f"[{i}] Artikel-ID: {chunk['article_id']}"
         if chunk.get("title"):
             meta += f" | Titel: {chunk['title']}"
