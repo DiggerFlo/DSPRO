@@ -61,3 +61,6 @@ tmp/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# ─── Visualization ────────────────────────────────────────────────────────────
+visualization/node_modules
