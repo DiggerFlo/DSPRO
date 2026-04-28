@@ -1,4 +1,7 @@
-.PHONY: setup ingest experiment demo mlflow test
+SHELL := /bin/bash
+NVM   := export NVM_DIR="$$HOME/.nvm" && . "$$HOME/.nvm/nvm.sh"
+
+.PHONY: setup ingest experiment demo mlflow test api frontend dev
 
 # ─── Setup ────────────────────────────────────────────────────────────────────
 setup:
@@ -20,6 +23,19 @@ ground-truth:
 # ─── Demo ─────────────────────────────────────────────────────────────────────
 demo:
 	.venv/bin/streamlit run demo/app.py
+
+api:
+	.venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+frontend:
+	$(NVM) && cd visualization && npm run dev
+
+dev:
+	@$(NVM); \
+	trap 'kill 0' SIGINT; \
+	.venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload 2>&1 | sed 's/^/[api] /' & \
+	(cd visualization && npm run dev 2>&1 | sed 's/^/[ui]  /') & \
+	wait
 
 # ─── MLflow ───────────────────────────────────────────────────────────────────
 mlflow:

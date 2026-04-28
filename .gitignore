@@ -11,6 +11,7 @@ build/
 .venv/
 venv/
 env/
+.python-version
 
 # ─── Environment Variables ────────────────────────────────────────────────────
 .env
