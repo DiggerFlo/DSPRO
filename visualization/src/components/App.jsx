@@ -21,7 +21,6 @@ function fmtDate(ts) {
   return new Date(ts).toLocaleDateString('de-CH', { day: 'numeric', month: 'short' });
 }
 
-/** Render inline markdown: **bold**, [n] citations, plain text. */
 function renderInline(text, accent, dark, idPrefix) {
   return text.split(/(\*\*[^*\n]+\*\*|\[\d+\])/g).map((part, i) => {
     if (/^\*\*[^*]+\*\*$/.test(part)) return <strong key={i}>{part.slice(2, -2)}</strong>;
@@ -31,20 +30,32 @@ function renderInline(text, accent, dark, idPrefix) {
   });
 }
 
-/**
- * Render an LLM answer with section headings, bold, citations, and paragraphs.
- * Strips any trailing Quellen block the LLM may have appended.
- */
-function renderAnswer(text, accent, dark, idPrefix) {
-  // Strip LLM-generated Quellen list (we show SourceCards instead)
-  const clean = text.replace(/\*\*Quellen\*\*[\s\S]*$/, '').trim();
+const isBulletLine = l => l.startsWith('- ') || l.startsWith('* ');
 
+function renderBody(text, accent, dark, idPrefix) {
+  const serif = "'Source Serif 4',Georgia,serif";
+  const lines = text.trim().split('\n');
+  if (lines.some(isBulletLine)) {
+    return (
+      <ul style={{ margin: '4px 0 0 0', paddingLeft: 18, fontFamily: serif }}>
+        {lines.filter(isBulletLine).map((item, i) => (
+          <li key={i} style={{ marginBottom: 6 }}>
+            {renderInline(item.slice(2), accent, dark, idPrefix)}
+          </li>
+        ))}
+      </ul>
+    );
+  }
+  return <div style={{ fontFamily: serif }}>{renderInline(text.trim(), accent, dark, idPrefix)}</div>;
+}
+
+function renderAnswer(text, accent, dark, idPrefix) {
+  const clean      = text.replace(/\*\*Quellen\*\*[\s\S]*$/, '').trim();
   const SANS_LOCAL = 'Inter,system-ui,sans-serif';
   const serif      = "'Source Serif 4',Georgia,serif";
 
-  // Split on blank lines to get paragraphs/blocks
   return clean.split(/\n{2,}/).map((block, bIdx) => {
-    // Section heading: line starting with **Heading**
+    // Abschnitt mit Überschrift: **Titel**\nInhalt
     const headingMatch = block.match(/^\*\*([^*\n]+)\*\*\s*\n?([\s\S]*)$/);
     if (headingMatch) {
       const [, heading, body] = headingMatch;
@@ -53,28 +64,24 @@ function renderAnswer(text, accent, dark, idPrefix) {
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', fontFamily: SANS_LOCAL, marginBottom: 8, opacity: 0.55 }}>
             {heading}
           </div>
-          {body.trim() && (
-            <div style={{ fontFamily: serif }}>
-              {renderInline(body.trim(), accent, dark, idPrefix)}
-            </div>
-          )}
+          {body.trim() && renderBody(body, accent, dark, idPrefix)}
         </div>
       );
     }
-    // Bullet list
-    if (block.startsWith('- ')) {
-      const items = block.split('\n').filter(l => l.startsWith('- '));
+    // Bullet-Liste ohne Überschrift (- oder *)
+    if (isBulletLine(block.split('\n')[0])) {
+      const items = block.split('\n').filter(isBulletLine);
       return (
         <ul key={bIdx} style={{ margin: '0 0 16px 0', paddingLeft: 18, fontFamily: serif }}>
-          {items.map((item, iIdx) => (
-            <li key={iIdx} style={{ marginBottom: 4 }}>
+          {items.map((item, i) => (
+            <li key={i} style={{ marginBottom: 6 }}>
               {renderInline(item.slice(2), accent, dark, idPrefix)}
             </li>
           ))}
         </ul>
       );
     }
-    // Regular paragraph
+    // Normaler Absatz
     return (
       <p key={bIdx} style={{ margin: '0 0 14px 0', fontFamily: serif }}>
         {renderInline(block, accent, dark, idPrefix)}

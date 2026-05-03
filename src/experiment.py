@@ -1,5 +1,3 @@
-"""MLflow experiment runner — evaluates the full RAG pipeline."""
-
 import csv
 import io
 import tempfile
@@ -15,6 +13,8 @@ from config import (
     EMBEDDING_MODEL,
     RERANKER_MODEL,
     USE_RERANKING,
+    USE_RRF,
+    RRF_K,
     CHUNK_SIZE,
     CHUNK_OVERLAP,
     EVAL_GROUND_TRUTH,
@@ -29,7 +29,7 @@ from config import (
     LLM_MAX_TOKENS,
 )
 from embed import get_chroma_collection
-from retrieval import retrieve
+from retrieval import retrieve, build_bm25_index
 from generate import generate, fetch_full_article_chunks
 from evaluate import load_ground_truth, evaluate_retrieval, evaluate_faithfulness
 
@@ -41,14 +41,13 @@ def _average(list_of_dicts: list[dict]) -> dict:
 
 
 def _print_results_table(rows: list[dict], show_generation: bool = False) -> None:
-    """Print a readable per-query results table to stdout."""
     gen_col = f" {'Faith':>6}" if show_generation else ""
-    header = f"  {'Query':<52} {'H@1':>4} {'H@5':>4} {'MRR':>6}{gen_col}"
+    header  = f"  {'Query':<52} {'H@1':>4} {'H@5':>4} {'MRR':>6}{gen_col}"
     print(header)
     print("  " + "─" * (len(header) - 2))
     for r in rows:
-        h1  = "✓" if r["hit_at_1"] else "✗"
-        h5  = "✓" if r["hit_at_5"] else "✗"
+        h1      = "✓" if r["hit_at_1"] else "✗"
+        h5      = "✓" if r["hit_at_5"] else "✗"
         gen_val = f" {r.get('faithfulness', 0):>6.3f}" if show_generation else ""
         print(f"  {r['query']:<52} {h1:>4} {h5:>4} {r['mrr']:>6.3f}{gen_val}")
 
@@ -65,6 +64,7 @@ def run_experiment(run_name: str = None) -> None:
     collection = get_chroma_collection(CHROMA_PATH, CHROMA_COLLECTION)
     model      = SentenceTransformer(EMBEDDING_MODEL, trust_remote_code=True)
     reranker   = CrossEncoder(RERANKER_MODEL) if USE_RERANKING else None
+    bm25_index = build_bm25_index(collection) if USE_RRF else None
 
     if run_name is None:
         run_name = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -75,6 +75,8 @@ def run_experiment(run_name: str = None) -> None:
             "embedding_model":  EMBEDDING_MODEL,
             "reranker_model":   RERANKER_MODEL if USE_RERANKING else "none",
             "use_reranking":    USE_RERANKING,
+            "use_rrf":          USE_RRF,
+            "rrf_k":            RRF_K if USE_RRF else "n/a",
             "use_full_article": USE_FULL_ARTICLE,
             "chunk_size":       CHUNK_SIZE,
             "chunk_overlap":    CHUNK_OVERLAP,
@@ -87,9 +89,9 @@ def run_experiment(run_name: str = None) -> None:
             "llm_max_tokens":   LLM_MAX_TOKENS,
         })
 
-        per_query_rows            = []
-        retrieval_metrics_list    = []
-        generation_metrics_list   = []
+        per_query_rows          = []
+        retrieval_metrics_list  = []
+        generation_metrics_list = []
 
         for sample in ground_truth:
             query        = sample["query"]
@@ -102,16 +104,18 @@ def run_experiment(run_name: str = None) -> None:
                 reranker,
                 top_k_retrieval=EVAL_TOP_K_RETRIEVAL,
                 top_k_rerank=EVAL_TOP_K_FINAL,
+                bm25_index=bm25_index,
+                rrf_k=RRF_K,
             )
 
             metrics = evaluate_retrieval(results, relevant_ids, k=EVAL_TOP_K_FINAL)
             retrieval_metrics_list.append(metrics)
 
             per_query_rows.append({
-                "query":    query[:55],
-                "hit_at_1": metrics["hit_at_1"],
-                "hit_at_5": metrics[f"hit_at_{EVAL_TOP_K_FINAL}"],
-                "mrr":      metrics["mrr"],
+                "query":        query[:55],
+                "hit_at_1":     metrics["hit_at_1"],
+                "hit_at_5":     metrics[f"hit_at_{EVAL_TOP_K_FINAL}"],
+                "mrr":          metrics["mrr"],
                 "top1_article": results[0]["article_id"] if results else "",
                 "top1_title":   results[0]["title"][:60] if results else "",
                 "top1_score":   round(results[0].get("similarity_score", 0), 3) if results else 0,
@@ -119,26 +123,25 @@ def run_experiment(run_name: str = None) -> None:
 
             if ENABLE_GENERATION_EVAL:
                 if USE_FULL_ARTICLE:
-                    article_ids  = list(dict.fromkeys(r["article_id"] for r in results))
-                    gen_context  = fetch_full_article_chunks(article_ids, collection)
+                    article_ids = list(dict.fromkeys(r["article_id"] for r in results))
+                    gen_context = fetch_full_article_chunks(article_ids, collection)
                 else:
-                    gen_context  = results
-                answer = generate(query, gen_context)
+                    gen_context = results
+                answer      = generate(query, gen_context)
                 gen_metrics = evaluate_faithfulness(answer, gen_context)
                 generation_metrics_list.append(gen_metrics)
                 per_query_rows[-1]["generated_answer"] = answer
                 per_query_rows[-1]["faithfulness"]     = round(gen_metrics["faithfulness"], 3)
 
-        # ── Durchschnittliche Metriken loggen ──────────────────────────────────
         avg = _average(retrieval_metrics_list)
         mlflow.log_metrics(avg)
 
         if generation_metrics_list:
             mlflow.log_metrics(_average(generation_metrics_list))
 
-        # ── Per-Query CSV als Artifact speichern ───────────────────────────────
+        # Per-Query Ergebnisse als CSV-Artifact speichern
         csv_buffer = io.StringIO()
-        writer = csv.DictWriter(csv_buffer, fieldnames=per_query_rows[0].keys())
+        writer     = csv.DictWriter(csv_buffer, fieldnames=per_query_rows[0].keys())
         writer.writeheader()
         writer.writerows(per_query_rows)
 
@@ -150,7 +153,7 @@ def run_experiment(run_name: str = None) -> None:
         mlflow.log_artifact(tmp_path, artifact_path="eval")
         os.unlink(tmp_path)
 
-        # ── Ausgabe ───────────────────────────────────────────────────────────
+        has_gen = bool(generation_metrics_list)
         print(f"\n{'═' * 65}")
         print(f"  Experiment: {MLFLOW_EXPERIMENT}  |  Run: {run_name}")
         print(f"{'═' * 65}")
@@ -159,7 +162,6 @@ def run_experiment(run_name: str = None) -> None:
         print(f"  Reranking:      {'an' if USE_RERANKING else 'aus'}")
         print(f"{'─' * 65}")
         print()
-        has_gen = bool(generation_metrics_list)
         _print_results_table(per_query_rows, show_generation=has_gen)
         print()
         print(f"{'─' * 65}")
