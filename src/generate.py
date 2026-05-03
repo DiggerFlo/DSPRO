@@ -51,6 +51,39 @@ def _build_context(chunks: list[dict]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def fetch_full_article_chunks(article_ids: list[str], collection) -> list[dict]:
+    """Fetch all chunks for the given articles from ChromaDB.
+
+    Returns chunks in retrieval-rank order (article order preserved), within
+    each article sorted by chunk_index — so the LLM sees the full article text.
+    """
+    if not article_ids:
+        return []
+
+    result = collection.get(
+        where={"article_id": {"$in": article_ids}},
+        include=["documents", "metadatas"],
+    )
+
+    grouped: dict[str, list[dict]] = {aid: [] for aid in article_ids}
+    for doc, meta in zip(result["documents"], result["metadatas"]):
+        aid = meta["article_id"]
+        if aid in grouped:
+            grouped[aid].append({
+                "chunk_text":     doc,
+                "article_id":     aid,
+                "chunk_index":    meta.get("chunk_index", 0),
+                "title":          meta.get("title", ""),
+                "category":       meta.get("category", ""),
+                "published_date": meta.get("published_date", ""),
+            })
+
+    chunks = []
+    for aid in article_ids:
+        chunks.extend(sorted(grouped[aid], key=lambda x: x["chunk_index"]))
+    return chunks
+
+
 def generate(query: str, context_chunks: list[dict]) -> str:
     """Generate a grounded answer from the query and retrieved context chunks."""
     system_prompt = _load_prompt("system_prompt.md")

@@ -43,3 +43,4 @@ EVAL_GROUND_TRUTH      = os.path.join(BASE_DIR, "data", "eval", "ground_truth.js
 EVAL_TOP_K_RETRIEVAL   = 10   # Kandidaten aus ChromaDB (vorher 20 — halbiert Reranking-Zeit)
 EVAL_TOP_K_FINAL       = 5    # Nach Reranking
 ENABLE_GENERATION_EVAL = True
+USE_FULL_ARTICLE       = False  # True: LLM bekommt kompletten Artikel statt nur Top-Chunks

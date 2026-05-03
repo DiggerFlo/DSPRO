@@ -21,6 +21,7 @@ from config import (
     EVAL_TOP_K_RETRIEVAL,
     EVAL_TOP_K_FINAL,
     ENABLE_GENERATION_EVAL,
+    USE_FULL_ARTICLE,
     CHROMA_PATH,
     CHROMA_COLLECTION,
     LLM_MODEL,
@@ -29,8 +30,8 @@ from config import (
 )
 from embed import get_chroma_collection
 from retrieval import retrieve
-from generate import generate
-from evaluate import load_ground_truth, evaluate_retrieval, evaluate_answers, evaluate_faithfulness
+from generate import generate, fetch_full_article_chunks
+from evaluate import load_ground_truth, evaluate_retrieval, evaluate_faithfulness
 
 
 def _average(list_of_dicts: list[dict]) -> dict:
@@ -41,17 +42,15 @@ def _average(list_of_dicts: list[dict]) -> dict:
 
 def _print_results_table(rows: list[dict], show_generation: bool = False) -> None:
     """Print a readable per-query results table to stdout."""
-    gen_cols = f" {'ROUGE':>6} {'Faith':>6}" if show_generation else ""
-    header = f"  {'Query':<52} {'H@1':>4} {'H@3':>4} {'H@5':>4} {'MRR':>6}{gen_cols}"
+    gen_col = f" {'Faith':>6}" if show_generation else ""
+    header = f"  {'Query':<52} {'H@1':>4} {'H@5':>4} {'MRR':>6}{gen_col}"
     print(header)
     print("  " + "─" * (len(header) - 2))
     for r in rows:
-        h1  = "✓" if r["hit_at_1"]  else "✗"
-        h3  = "✓" if r["hit_at_3"]  else "✗"
-        h5  = "✓" if r["hit_at_5"]  else "✗"
-        gen_val = (f" {r.get('rouge_l_approx', 0):>6.3f}"
-                   f" {r.get('faithfulness', 0):>6.3f}") if show_generation else ""
-        print(f"  {r['query']:<52} {h1:>4} {h3:>4} {h5:>4} {r['mrr']:>6.3f}{gen_val}")
+        h1  = "✓" if r["hit_at_1"] else "✗"
+        h5  = "✓" if r["hit_at_5"] else "✗"
+        gen_val = f" {r.get('faithfulness', 0):>6.3f}" if show_generation else ""
+        print(f"  {r['query']:<52} {h1:>4} {h5:>4} {r['mrr']:>6.3f}{gen_val}")
 
 
 def run_experiment(run_name: str = None) -> None:
@@ -76,13 +75,13 @@ def run_experiment(run_name: str = None) -> None:
             "embedding_model":  EMBEDDING_MODEL,
             "reranker_model":   RERANKER_MODEL if USE_RERANKING else "none",
             "use_reranking":    USE_RERANKING,
+            "use_full_article": USE_FULL_ARTICLE,
             "chunk_size":       CHUNK_SIZE,
             "chunk_overlap":    CHUNK_OVERLAP,
             "top_k_retrieval":  EVAL_TOP_K_RETRIEVAL,
             "top_k_final":      EVAL_TOP_K_FINAL,
             "num_eval_queries": len(ground_truth),
             "chunks_in_db":     collection.count(),
-            "months_indexed":   "all",
             "llm_model":        LLM_MODEL,
             "llm_temperature":  LLM_TEMPERATURE,
             "llm_max_tokens":   LLM_MAX_TOKENS,
@@ -111,7 +110,6 @@ def run_experiment(run_name: str = None) -> None:
             per_query_rows.append({
                 "query":    query[:55],
                 "hit_at_1": metrics["hit_at_1"],
-                "hit_at_3": metrics["hit_at_3"],
                 "hit_at_5": metrics[f"hit_at_{EVAL_TOP_K_FINAL}"],
                 "mrr":      metrics["mrr"],
                 "top1_article": results[0]["article_id"] if results else "",
@@ -120,17 +118,16 @@ def run_experiment(run_name: str = None) -> None:
             })
 
             if ENABLE_GENERATION_EVAL:
-                expected = sample.get("expected_answer")
-                if expected:
-                    answer = generate(query, results)
-                    gen_metrics = {
-                        **evaluate_answers(answer, expected),
-                        **evaluate_faithfulness(answer, results),
-                    }
-                    generation_metrics_list.append(gen_metrics)
-                    per_query_rows[-1]["generated_answer"] = answer
-                    per_query_rows[-1]["rouge_l_approx"]   = round(gen_metrics["rouge_l_approx"], 3)
-                    per_query_rows[-1]["faithfulness"]     = round(gen_metrics["faithfulness"], 3)
+                if USE_FULL_ARTICLE:
+                    article_ids  = list(dict.fromkeys(r["article_id"] for r in results))
+                    gen_context  = fetch_full_article_chunks(article_ids, collection)
+                else:
+                    gen_context  = results
+                answer = generate(query, gen_context)
+                gen_metrics = evaluate_faithfulness(answer, gen_context)
+                generation_metrics_list.append(gen_metrics)
+                per_query_rows[-1]["generated_answer"] = answer
+                per_query_rows[-1]["faithfulness"]     = round(gen_metrics["faithfulness"], 3)
 
         # ── Durchschnittliche Metriken loggen ──────────────────────────────────
         avg = _average(retrieval_metrics_list)
@@ -167,16 +164,11 @@ def run_experiment(run_name: str = None) -> None:
         print()
         print(f"{'─' * 65}")
         print(f"  Hit@1:  {avg['hit_at_1']:.0%}   "
-              f"Hit@3:  {avg['hit_at_3']:.0%}   "
               f"Hit@{EVAL_TOP_K_FINAL}: {avg[f'hit_at_{EVAL_TOP_K_FINAL}']:.0%}   "
               f"MRR:  {avg['mrr']:.3f}")
-        print(f"  Precision@{EVAL_TOP_K_FINAL}: {avg[f'precision_at_{EVAL_TOP_K_FINAL}']:.3f}   "
-              f"Recall@{EVAL_TOP_K_FINAL}: {avg[f'recall_at_{EVAL_TOP_K_FINAL}']:.3f}   "
-              f"NDCG@{EVAL_TOP_K_FINAL}: {avg[f'ndcg_at_{EVAL_TOP_K_FINAL}']:.3f}")
         if has_gen:
             avg_gen = _average(generation_metrics_list)
-            print(f"  ROUGE-L (approx):  {avg_gen['rouge_l_approx']:.3f}   "
-                  f"Faithfulness:  {avg_gen['faithfulness']:.3f}")
+            print(f"  Faithfulness:  {avg_gen['faithfulness']:.3f}")
             print(f"  LLM: {LLM_MODEL}  |  Temp: {LLM_TEMPERATURE}  |  Max-Tokens: {LLM_MAX_TOKENS}")
         print(f"{'═' * 65}")
         print(f"\n  MLflow UI → http://localhost:5000\n")
