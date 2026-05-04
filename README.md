@@ -8,15 +8,23 @@
 
 ---
 
+## Screenshots
+
+| Welcome Screen | Example Query & Answer | Sources |
+|:-:|:-:|:-:|
+| ![Welcome Screen](media/screenshot_welcome.png) | ![Answer View](media/screenshot_answer.png) | ![Source Cards](media/screenshot_sources.png) |
+
+---
+
 ## Overview
 
-NZZ ContextAI allows journalists and editors to ask questions against the NZZ archive and receive source-backed answers. The system combines semantic search (embedding + reranking) with local LLM generation via Ollama.
+NZZ ContextAI allows journalists and editors to ask questions against the NZZ archive and receive source-backed answers. The system combines semantic search (embedding + reranking with RRF fusion) with local LLM generation via Ollama. The interface supports German and English, streaming responses, conversation history, and configurable retrieval parameters at runtime.
 
 **Pipeline:**
 ```
 JSON articles → BeautifulSoup → Chunking → Qwen3-Embedding → ChromaDB
                                                                    ↓
-                Gemma4 (Ollama) ← Reranking ← Semantic Search ←───┘
+             Gemma4 (Ollama) ← RRF Fusion ← Reranking ← Semantic Search
 ```
 
 ---
@@ -31,13 +39,21 @@ nzz-contextai/
 │   ├── preprocess.py      # HTML cleaning (BeautifulSoup), normalization
 │   ├── chunking.py        # Article chunking
 │   ├── embed.py           # Embedding generation, ChromaDB storage
-│   ├── retrieval.py       # Semantic search + reranking
+│   ├── retrieval.py       # Semantic search + reranking + RRF fusion
 │   ├── generate.py        # Answer generation with Gemma4 via Ollama
 │   ├── evaluate.py        # Metrics: Faithfulness, ROUGE-L, Precision, Recall
 │   ├── experiment.py      # Evaluation runner with MLflow logging
 │   ├── setup_models.py    # Download required models (run once)
 │   └── prompts/
 │       └── system_prompt.md
+├── api/
+│   └── main.py            # FastAPI backend (streaming, runtime config via PATCH /config)
+├── visualization/         # React + Vite frontend
+│   └── src/
+│       ├── components/    # App, SourceCard, Cite, CopyButton, LoadingDots, Icons
+│       ├── api.js         # API client (streaming, config, topics)
+│       ├── i18n.jsx       # DE / EN translations
+│       └── theme.js       # Light / dark theme tokens
 ├── scripts/
 │   └── build_expected_answers.py  # Generate reference answers for ground truth
 ├── notebooks/
@@ -45,15 +61,16 @@ nzz-contextai/
 │   ├── Explorer Notebook.ipynb    # Inspect raw data & debug retrieval
 │   └── Data Exploration.ipynb     # Dataset statistics & charts
 ├── demo/
-│   └── app.py                     # Streamlit chat interface
+│   └── app.py                     # Legacy Streamlit chat interface
 ├── data/
 │   ├── raw/                       # NZZ JSON source files (not in git)
 │   ├── chroma/                    # ChromaDB vector store (not in git)
 │   └── eval/
-│       └── ground_truth.jsonl     # 14 evaluation queries with reference answers
+│       └── ground_truth.jsonl     # Evaluation queries with reference answers
+├── media/                         # Screenshots for README
 ├── tests/
 │   └── test_pipeline.py
-├── main.py                        # Query pipeline entry point
+├── main.py                        # CLI query entry point
 ├── requirements.txt
 ├── Makefile
 └── .env.example
@@ -63,7 +80,7 @@ nzz-contextai/
 
 ## Setup
 
-### 1. Install dependencies
+### 1. Install Python dependencies
 ```bash
 python -m venv .venv
 source .venv/bin/activate   # Linux/Mac
@@ -78,9 +95,31 @@ curl -fsSL https://ollama.com/install.sh | sh
 make setup
 ```
 
-### 3. Configure environment variables
+### 3. Install frontend dependencies
+```bash
+cd visualization && npm install
+```
+
+### 4. Configure environment variables
 ```bash
 cp .env.example .env
+```
+
+---
+
+## Running the App
+
+### Full stack (API + frontend together)
+```bash
+make dev
+```
+- FastAPI backend → [http://localhost:8000](http://localhost:8000)
+- Vite dev server → [http://localhost:5173](http://localhost:5173)
+
+### Separate processes
+```bash
+make api        # FastAPI backend only
+make frontend   # React frontend only
 ```
 
 ---
@@ -100,11 +139,11 @@ make ground-truth
 # Run full evaluation with MLflow tracking
 make experiment
 
-# Start the Streamlit demo
-make demo
-
 # Open MLflow UI → http://localhost:5000
 make mlflow
+
+# Legacy Streamlit demo
+make demo
 ```
 
 Or run everything from the notebook: `notebooks/Pipeline.ipynb`
@@ -113,7 +152,7 @@ Or run everything from the notebook: `notebooks/Pipeline.ipynb`
 
 ## Configuration
 
-All parameters are defined in [`src/config.py`](src/config.py):
+All default parameters are defined in [`src/config.py`](src/config.py). Runtime parameters can be changed without restart via `PATCH /config` or through the Settings panel in the UI.
 
 | Parameter | Value | Description |
 |---|---|---|

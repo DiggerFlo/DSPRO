@@ -3,6 +3,30 @@ import { getResponse } from './mock.js';
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 const API_URL  = import.meta.env.VITE_API_URL;
 
+// ── Config ────────────────────────────────────────────────────────────────────
+
+export async function fetchConfig() {
+  if (USE_MOCK || !API_URL) return null;
+  try {
+    const res = await fetch(`${API_URL}/config`);
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function updateConfig(changes) {
+  if (USE_MOCK || !API_URL) return;
+  try {
+    await fetch(`${API_URL}/config`, {
+      method:  'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(changes),
+    });
+  } catch { /* ignore */ }
+}
+
 // ── Topics ────────────────────────────────────────────────────────────────────
 
 /**

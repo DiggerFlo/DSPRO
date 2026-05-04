@@ -15,12 +15,22 @@ class BM25Index:
     metas: list[dict]
 
 
-def build_bm25_index(collection: chromadb.Collection) -> BM25Index:
-    """Lädt alle Chunks aus ChromaDB und baut einen BM25-Index. Läuft einmal pro Experiment."""
-    print("BM25-Index wird aufgebaut...", flush=True)
-    result    = collection.get(include=["documents", "metadatas"])
-    docs      = result["documents"]
-    metas     = result["metadatas"]
+def build_bm25_index(collection: chromadb.Collection, batch_size: int = 5000) -> BM25Index:
+    """Lädt alle Chunks aus ChromaDB und baut einen BM25-Index. Läuft einmal pro Experiment.
+    Batching nötig wegen SQLite-Limit bei grossen Collections."""
+    total = collection.count()
+    print(f"BM25-Index wird aufgebaut ({total:,} Chunks)...", flush=True)
+
+    docs, metas = [], []
+    for offset in range(0, total, batch_size):
+        result = collection.get(
+            limit=batch_size,
+            offset=offset,
+            include=["documents", "metadatas"],
+        )
+        docs.extend(result["documents"])
+        metas.extend(result["metadatas"])
+
     tokenized = [doc.lower().split() for doc in docs]
     print(f"BM25-Index fertig — {len(docs):,} Chunks indiziert.")
     return BM25Index(bm25=BM25Okapi(tokenized), docs=docs, metas=metas)

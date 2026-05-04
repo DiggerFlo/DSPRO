@@ -20,9 +20,10 @@ Bullet-Liste mit konkreten Zahlen, Namen und Zitaten — wörtlich aus den Quell
 **Hinweis** *(nur wenn relevant)*
 Zeitliche Lücken, nicht abgedeckte Aspekte oder Grenzen der verfügbaren Daten.
 
-## Quellenverweise
-- Verweise im Text ausschliesslich mit [1], [2], [3] usw.
-- Schreibe am Ende KEINE separate Quellenliste — die Quellen werden automatisch angezeigt.
+## Quellenverweise — ZWINGEND
+- Verweise im Text mit [1], [2], [3] usw. überall dort, wo du eine Aussage aus einer Quelle übernimmst.
+- Schreibe am Ende ABSOLUT KEINE Quellenliste, kein «Quellen:»-Block, keine Artikel-IDs, keine Metadaten.
+  Die Quellen werden von der Plattform automatisch angezeigt — eine eigene Liste ist falsch und verboten.
 
 ## Zeitliche Einordnung — WICHTIG
 - Jede Quelle hat ein Publikationsdatum. Prüfe zuerst, ob die Artikel aus dem gefragten Zeitraum stammen.

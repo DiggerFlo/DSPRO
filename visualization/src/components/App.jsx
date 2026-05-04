@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getTheme, SANS } from '../theme.js';
 import { I18N } from '../i18n.jsx';
-import { queryStream, fetchTopics } from '../api.js';
+import { queryStream, fetchTopics, fetchConfig, updateConfig } from '../api.js';
 import Cite from './Cite.jsx';
 import SourceCard from './SourceCard.jsx';
 import CopyButton from './CopyButton.jsx';
 import LoadingDots from './LoadingDots.jsx';
-import { SunIcon, MoonIcon, ArrowIcon, ChevronUpIcon, HistoryIcon } from './Icons.jsx';
+import { SunIcon, MoonIcon, ArrowIcon, ChevronUpIcon, HistoryIcon, SettingsIcon } from './Icons.jsx';
 
-const HISTORY_KEY = 'nzz_history_v2';
+// v3: sessions instead of single Q&A entries
+const HISTORY_KEY = 'nzz_history_v3';
 const MAX_HISTORY  = 20;
 
 function loadHistory() {
@@ -22,10 +23,13 @@ function fmtDate(ts) {
 }
 
 function renderInline(text, accent, dark, idPrefix) {
-  return text.split(/(\*\*[^*\n]+\*\*|\[\d+\])/g).map((part, i) => {
+  return text.split(/(\*\*[^*\n]+\*\*|\[\d+(?:,\s*\d+)*\])/g).map((part, i) => {
     if (/^\*\*[^*]+\*\*$/.test(part)) return <strong key={i}>{part.slice(2, -2)}</strong>;
-    const m = part.match(/^\[(\d+)\]$/);
-    if (m) return <Cite key={i} num={+m[1]} accent={accent} dark={dark} idPrefix={idPrefix} />;
+    const m = part.match(/^\[(\d+(?:,\s*\d+)*)\]$/);
+    if (m) {
+      const nums = m[1].split(',').map(n => +n.trim());
+      return <span key={i}>{nums.map((n, j) => <Cite key={j} num={n} accent={accent} dark={dark} idPrefix={idPrefix} />)}</span>;
+    }
     return <span key={i}>{part}</span>;
   });
 }
@@ -55,7 +59,6 @@ function renderAnswer(text, accent, dark, idPrefix) {
   const serif      = "'Source Serif 4',Georgia,serif";
 
   return clean.split(/\n{2,}/).map((block, bIdx) => {
-    // Abschnitt mit Überschrift: **Titel**\nInhalt
     const headingMatch = block.match(/^\*\*([^*\n]+)\*\*\s*\n?([\s\S]*)$/);
     if (headingMatch) {
       const [, heading, body] = headingMatch;
@@ -68,7 +71,6 @@ function renderAnswer(text, accent, dark, idPrefix) {
         </div>
       );
     }
-    // Bullet-Liste ohne Überschrift (- oder *)
     if (isBulletLine(block.split('\n')[0])) {
       const items = block.split('\n').filter(isBulletLine);
       return (
@@ -81,13 +83,55 @@ function renderAnswer(text, accent, dark, idPrefix) {
         </ul>
       );
     }
-    // Normaler Absatz
     return (
       <p key={bIdx} style={{ margin: '0 0 14px 0', fontFamily: serif }}>
         {renderInline(block, accent, dark, idPrefix)}
       </p>
     );
   });
+}
+
+// ── Toggle-Row für das Settings-Panel ─────────────────────────────────────────
+function ToggleRow({ label, value, onChange, disabled, note, th }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${th.border}` }}>
+      <div>
+        <span style={{ fontSize: 13, color: disabled ? th.textFaint : th.text, fontFamily: SANS }}>{label}</span>
+        {note && <span style={{ fontSize: 10, color: th.textFaint, fontFamily: SANS, marginLeft: 6 }}>{note}</span>}
+      </div>
+      <button
+        disabled={disabled}
+        onClick={() => onChange(!value)}
+        style={{
+          width: 36, height: 20, borderRadius: 10, border: 'none', cursor: disabled ? 'not-allowed' : 'pointer',
+          background: value && !disabled ? th.accent : th.borderLight,
+          position: 'relative', transition: 'background 0.2s', flexShrink: 0,
+          opacity: disabled ? 0.4 : 1,
+        }}
+      >
+        <span style={{
+          position: 'absolute', top: 2, left: value ? 18 : 2, width: 16, height: 16,
+          borderRadius: '50%', background: '#fff', transition: 'left 0.2s',
+        }} />
+      </button>
+    </div>
+  );
+}
+
+function SliderRow({ label, value, min, max, step, onChange, th }) {
+  return (
+    <div style={{ padding: '10px 0', borderBottom: `1px solid ${th.border}` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: 13, color: th.text, fontFamily: SANS }}>{label}</span>
+        <span style={{ fontSize: 12, fontWeight: 600, color: th.accent, fontFamily: SANS }}>{value}</span>
+      </div>
+      <input
+        type="range" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value))}
+        style={{ width: '100%', accentColor: th.accent }}
+      />
+    </div>
+  );
 }
 
 export default function App() {
@@ -105,10 +149,23 @@ export default function App() {
   const [pendingQuestion, setPendingQuestion] = useState('');
   const [error,           setError]           = useState(null);
 
-  // ── History — persisted in localStorage ────────────────────────────────────
-  // Each entry: { id, question, answer, sources, followUps, ts }
+  // ── Session-basierter Verlauf ────────────────────────────────────────────────
+  // Jede Session: { id, ts, messages: [{question, answer, sources, followUps}] }
   const [history,     setHistory]     = useState(loadHistory);
   const [showHistory, setShowHistory] = useState(false);
+  const sessionIdRef = useRef(null); // aktuelle Session-ID
+
+  // ── Runtime-Config (vom Backend geladen, im GUI änderbar) ───────────────────
+  const [config, setConfig] = useState({
+    use_full_article:   false,
+    use_reranking:      true,
+    top_k_retrieval:    10,
+    top_k_final:        5,
+    llm_temperature:    0.2,
+    show_follow_ups:    true,
+    reranker_available: true,
+  });
+  const [showSettings, setShowSettings] = useState(false);
 
   // ── Dynamic topics from backend ─────────────────────────────────────────────
   const [topics, setTopics] = useState([]);
@@ -126,10 +183,13 @@ export default function App() {
   const generationRef      = useRef(0);
   const answerAccRef       = useRef('');
 
-  // ── Load topics from backend on mount ───────────────────────────────────────
+  // ── Load topics + config from backend on mount ───────────────────────────────
   useEffect(() => {
     fetchTopics().then(data => {
       if (data?.de?.length > 0) setTopics(data.de);
+    });
+    fetchConfig().then(cfg => {
+      if (cfg) setConfig(prev => ({ ...prev, ...cfg }));
     });
   }, []);
 
@@ -159,12 +219,13 @@ export default function App() {
   useEffect(() => {
     const h = e => {
       if (e.key !== 'Escape') return;
+      if (showSettings) { setShowSettings(false); return; }
       if (showWelcome) { closeWelcome(); return; }
       if (messages.length > 0 && !loading) resetChat();
     };
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
-  }, [showWelcome, messages.length, loading]);
+  }, [showSettings, showWelcome, messages.length, loading]);
 
   useEffect(() => {
     if (messages.length > 0)
@@ -196,33 +257,48 @@ export default function App() {
   const resetChat = () => {
     abortRef.current?.abort();
     ++generationRef.current;
+    sessionIdRef.current = null;
     setQuery_(''); setMessages([]); setLoading(false);
     setPendingQuestion(''); setError(null);
     document.title = 'NZZ ContextAI';
     setTimeout(() => inputRef.current?.focus(), 50);
   };
 
-  /** Restore a saved conversation from history without a new API call. */
-  const restoreConversation = useCallback(item => {
+  const updateSetting = useCallback(async (key, value) => {
+    const patch = { [key]: value };
+    setConfig(prev => ({ ...prev, ...patch }));
+    await updateConfig(patch);
+  }, []);
+
+  /** Restore a saved session from history without a new API call. */
+  const restoreConversation = useCallback(session => {
     abortRef.current?.abort();
     ++generationRef.current;
+    sessionIdRef.current = session.id;
     setQuery_(''); setLoading(false); setPendingQuestion(''); setError(null);
-    setMessages([{
-      question:  item.question,
-      answer:    item.answer,
-      sources:   item.sources,
-      followUps: item.followUps,
-      done:      true,
-    }]);
-    document.title = `${item.question} – NZZ ContextAI`;
+    setMessages(session.messages.map(m => ({ ...m, done: true })));
+    document.title = `${session.messages[0].question} – NZZ ContextAI`;
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
 
-  /** Persist a completed Q&A exchange to the history list. */
+  /** Persist a completed Q&A to the current session (or start a new one). */
   const persistToHistory = useCallback((question, answer, sources, followUps) => {
-    const record = { id: Date.now(), question, answer, sources, followUps, ts: Date.now() };
+    const msg = { question, answer, sources, followUps };
     setHistory(prev => {
-      const next = [record, ...prev.filter(x => x.question !== question)].slice(0, MAX_HISTORY);
+      let next;
+      if (sessionIdRef.current !== null) {
+        // Zur bestehenden Session hinzufügen
+        next = prev.map(s =>
+          s.id === sessionIdRef.current
+            ? { ...s, ts: Date.now(), messages: [...s.messages, msg] }
+            : s
+        );
+      } else {
+        // Neue Session starten
+        const newSession = { id: Date.now(), ts: Date.now(), messages: [msg] };
+        sessionIdRef.current = newSession.id;
+        next = [newSession, ...prev].slice(0, MAX_HISTORY);
+      }
       saveHistory(next);
       return next;
     });
@@ -321,6 +397,15 @@ export default function App() {
                 {l}
               </button>
             ))}
+            <button
+              onClick={() => setShowSettings(true)}
+              title={t.settingsTitle}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, color: th.utilText, transition: 'color 0.15s' }}
+              onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+              onMouseLeave={e => e.currentTarget.style.color = th.utilText}
+            >
+              <SettingsIcon c="currentColor" />
+            </button>
             <button onClick={toggleDark} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24 }}>
               {dark ? <SunIcon c="#888" /> : <MoonIcon c="#888" />}
             </button>
@@ -369,19 +454,22 @@ export default function App() {
         {showSidebar && (
           <aside className="slide-in" style={{ width: 210, flexShrink: 0, borderRight: `1px solid ${th.border}`, paddingTop: 24, paddingRight: 16, paddingBottom: 24, transition: 'border-color 0.2s' }}>
             <div style={{ fontSize: 9, fontWeight: 700, color: th.textMuted, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 12, fontFamily: SANS }}>{t.history}</div>
-            {history.map((item) => (
+            {history.map((session) => (
               <button
-                key={item.id}
-                onClick={() => restoreConversation(item)}
+                key={session.id}
+                onClick={() => restoreConversation(session)}
                 style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: `1px solid ${th.border}`, cursor: 'pointer', padding: '9px 0', lineHeight: 1.45, transition: 'color 0.1s' }}
                 onMouseEnter={e => e.currentTarget.style.color = th.accent}
                 onMouseLeave={e => e.currentTarget.style.color = th.textMid}
               >
                 <div style={{ fontSize: 12, color: 'inherit', fontFamily: serif, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
-                  {item.question}
+                  {session.messages[0].question}
                 </div>
-                <div style={{ fontSize: 10, color: th.textFaint, fontFamily: SANS, marginTop: 2 }}>
-                  {fmtDate(item.ts)}
+                <div style={{ fontSize: 10, color: th.textFaint, fontFamily: SANS, marginTop: 2, display: 'flex', gap: 6 }}>
+                  <span>{fmtDate(session.ts)}</span>
+                  {session.messages.length > 1 && (
+                    <span>· {session.messages.length} Fragen</span>
+                  )}
                 </div>
               </button>
             ))}
@@ -448,7 +536,7 @@ export default function App() {
                     {msg.sources.map((s, i) => (
                       <SourceCard key={s.id} source={s} index={i} th={th} serif={serif} relevanceLabel={t.relevance} dark={dark} idPrefix={idPrefix} />
                     ))}
-                    {msg.followUps?.length > 0 && isLast && !loading && (
+                    {config.show_follow_ups && msg.followUps?.length > 0 && isLast && !loading && (
                       <div className="fade-up" style={{ marginTop: 28 }}>
                         <div style={{ fontSize: 9, fontWeight: 700, color: th.textMuted, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 10, fontFamily: SANS }}>{t.followUpsLabel}</div>
                         {msg.followUps.map((q, i) => (
@@ -550,6 +638,70 @@ export default function App() {
         >
           <ChevronUpIcon color={th.textMid} />
         </button>
+      )}
+
+      {/* ── Settings modal ── */}
+      {showSettings && (
+        <div
+          onClick={() => setShowSettings(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+        >
+          <div className="fade-up" onClick={e => e.stopPropagation()} style={{ background: th.surface, maxWidth: 420, width: '100%', boxShadow: '0 16px 48px rgba(0,0,0,0.28)', overflow: 'hidden' }}>
+            <div style={{ background: '#111', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', fontFamily: SANS, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t.settingsTitle}</span>
+              <button onClick={() => setShowSettings(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ padding: '8px 20px 20px' }}>
+              <ToggleRow
+                label={t.settingsFollowUps}
+                value={config.show_follow_ups}
+                onChange={v => updateSetting('show_follow_ups', v)}
+                th={th}
+              />
+              <ToggleRow
+                label={t.settingsFullArticle}
+                value={config.use_full_article}
+                onChange={v => updateSetting('use_full_article', v)}
+                th={th}
+              />
+              <ToggleRow
+                label={t.settingsReranking}
+                value={config.use_reranking}
+                onChange={v => updateSetting('use_reranking', v)}
+                disabled={!config.reranker_available}
+                note={!config.reranker_available ? `(${t.settingsRerankerUnavailable})` : undefined}
+                th={th}
+              />
+              <SliderRow
+                label={t.settingsTopKRetrieval}
+                value={config.top_k_retrieval}
+                min={5} max={30} step={1}
+                onChange={v => updateSetting('top_k_retrieval', v)}
+                th={th}
+              />
+              <SliderRow
+                label={t.settingsTopKFinal}
+                value={config.top_k_final}
+                min={1} max={10} step={1}
+                onChange={v => updateSetting('top_k_final', v)}
+                th={th}
+              />
+              <SliderRow
+                label={t.settingsTemperature}
+                value={config.llm_temperature}
+                min={0} max={1} step={0.05}
+                onChange={v => updateSetting('llm_temperature', v)}
+                th={th}
+              />
+              <button
+                onClick={() => setShowSettings(false)}
+                style={{ marginTop: 16, width: '100%', padding: '10px', background: th.accent, color: dark ? '#000' : '#fff', border: 'none', fontSize: 12, fontWeight: 700, fontFamily: SANS, cursor: 'pointer', letterSpacing: '0.04em', textTransform: 'uppercase' }}
+              >
+                {t.settingsClose}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Welcome modal ── */}

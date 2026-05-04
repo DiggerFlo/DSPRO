@@ -5,6 +5,7 @@ import sys
 import threading
 from collections import Counter
 from contextlib import asynccontextmanager
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,15 +18,27 @@ from config import (
     CHROMA_PATH, CHROMA_COLLECTION,
     USE_RERANKING, EVAL_TOP_K_RETRIEVAL, EVAL_TOP_K_FINAL,
     LLM_MODEL, LLM_TEMPERATURE, LLM_MAX_TOKENS, LLM_KEEP_ALIVE,
+    USE_FULL_ARTICLE,
 )
 from embed import get_chroma_collection
 from retrieval import load_models, retrieve
-from generate import _build_context, _load_prompt, _is_relevant
+from generate import _build_context, _load_prompt, _is_relevant, fetch_full_article_chunks
 
 import ollama as _ollama
 
 _state:  dict      = {}
-_topics: list[str] = []  # wird nach dem Start im Hintergrund befüllt
+_topics: list[str] = []
+
+# ── Runtime config (can be changed via PATCH /config without restart) ─────────
+_config_lock = threading.Lock()
+_runtime_config: dict = {
+    "use_full_article":  USE_FULL_ARTICLE,
+    "use_reranking":     USE_RERANKING,
+    "top_k_retrieval":   EVAL_TOP_K_RETRIEVAL,
+    "top_k_final":       EVAL_TOP_K_FINAL,
+    "llm_temperature":   LLM_TEMPERATURE,
+    "show_follow_ups":   True,
+}
 
 
 def _generate_topics() -> None:
@@ -78,8 +91,8 @@ def _generate_topics() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _state["collection"]          = get_chroma_collection(CHROMA_PATH, CHROMA_COLLECTION)
-    _state["model"], _state["reranker"] = load_models(use_reranking=USE_RERANKING)
-    # Ollama vorladen damit die erste Anfrage nicht kalt startet
+    # Reranker immer laden damit er per Runtime-Config umgeschaltet werden kann
+    _state["model"], _state["reranker"] = load_models(use_reranking=True)
     _ollama.chat(
         model=LLM_MODEL,
         keep_alive=LLM_KEEP_ALIVE,
@@ -96,7 +109,7 @@ app = FastAPI(title="NZZ ContextAI API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://localhost:4173"],
-    allow_methods=["POST", "GET"],
+    allow_methods=["POST", "GET", "PATCH"],
     allow_headers=["Content-Type", "Accept"],
 )
 
@@ -105,10 +118,20 @@ class QueryRequest(BaseModel):
     question: str
 
 
+class ConfigPatch(BaseModel):
+    use_full_article:  Optional[bool]  = None
+    use_reranking:     Optional[bool]  = None
+    top_k_retrieval:   Optional[int]   = None
+    top_k_final:       Optional[int]   = None
+    llm_temperature:   Optional[float] = None
+    show_follow_ups:   Optional[bool]  = None
+
+
 def _to_pct(chunk: dict) -> int:
     if "rerank_score" in chunk:
-        return round(1 / (1 + math.exp(-chunk["rerank_score"])) * 100)
-    return round(chunk.get("similarity_score", 0) * 100)
+        # Sigmoid-Score: bei sehr hohen Logits auf 99 deckeln damit 100% nicht vorkommt
+        return min(99, round(1 / (1 + math.exp(-chunk["rerank_score"])) * 100))
+    return min(99, round(chunk.get("similarity_score", 0) * 100))
 
 
 def _format_date(iso: str) -> str:
@@ -177,20 +200,38 @@ def get_topics():
     return {"de": _topics, "en": []}
 
 
+@app.get("/config")
+def get_config():
+    with _config_lock:
+        return {**_runtime_config, "reranker_available": _state.get("reranker") is not None}
+
+
+@app.patch("/config")
+def patch_config(body: ConfigPatch):
+    with _config_lock:
+        for key, val in body.model_dump(exclude_none=True).items():
+            _runtime_config[key] = val
+    return {**_runtime_config, "reranker_available": _state.get("reranker") is not None}
+
+
 @app.post("/query/stream")
 def query_stream(req: QueryRequest):
     question = req.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Empty question")
 
+    with _config_lock:
+        cfg = dict(_runtime_config)
+
     def event_stream():
+        reranker = _state["reranker"] if cfg["use_reranking"] else None
         chunks = retrieve(
             question,
             _state["model"],
             _state["collection"],
-            _state["reranker"],
-            top_k_retrieval=EVAL_TOP_K_RETRIEVAL,
-            top_k_rerank=EVAL_TOP_K_FINAL,
+            reranker,
+            top_k_retrieval=cfg["top_k_retrieval"],
+            top_k_rerank=cfg["top_k_final"],
         )
 
         if not _is_relevant(chunks):
@@ -198,13 +239,17 @@ def query_stream(req: QueryRequest):
             yield _sse({"type": "done", "sources": [], "followUps": []})
             return
 
+        if cfg["use_full_article"]:
+            article_ids = list(dict.fromkeys(c["article_id"] for c in chunks))
+            chunks = fetch_full_article_chunks(article_ids, _state["collection"])
+
         system_prompt = _load_prompt("system_prompt.md")
         context       = _build_context(chunks)
         user_message  = f"Frage: {question}\n\nQuellen:\n{context}"
 
         for chunk in _ollama.chat(
             model=LLM_MODEL,
-            options={"temperature": LLM_TEMPERATURE, "num_predict": LLM_MAX_TOKENS},
+            options={"temperature": cfg["llm_temperature"], "num_predict": LLM_MAX_TOKENS},
             keep_alive=LLM_KEEP_ALIVE,
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -217,7 +262,7 @@ def query_stream(req: QueryRequest):
                 yield _sse({"type": "token", "content": token})
 
         sources    = _build_sources(chunks)
-        follow_ups = _generate_follow_ups(question)
+        follow_ups = _generate_follow_ups(question) if cfg["show_follow_ups"] else []
         yield _sse({"type": "done", "sources": sources, "followUps": follow_ups})
 
     return StreamingResponse(
