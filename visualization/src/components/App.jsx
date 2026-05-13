@@ -159,6 +159,7 @@ export default function App() {
   const [config, setConfig] = useState({
     use_full_article:   false,
     use_reranking:      true,
+    use_rrf:            false,
     top_k_retrieval:    10,
     top_k_final:        5,
     llm_temperature:    0.2,
@@ -662,6 +663,12 @@ export default function App() {
                 label={t.settingsFullArticle}
                 value={config.use_full_article}
                 onChange={v => updateSetting('use_full_article', v)}
+                th={th}
+              />
+              <ToggleRow
+                label={t.settingsRRF}
+                value={config.use_rrf}
+                onChange={v => updateSetting('use_rrf', v)}
                 th={th}
               />
               <ToggleRow

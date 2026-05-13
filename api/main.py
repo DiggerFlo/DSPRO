@@ -18,10 +18,10 @@ from config import (
     CHROMA_PATH, CHROMA_COLLECTION,
     USE_RERANKING, EVAL_TOP_K_RETRIEVAL, EVAL_TOP_K_FINAL,
     LLM_MODEL, LLM_TEMPERATURE, LLM_MAX_TOKENS, LLM_KEEP_ALIVE,
-    USE_FULL_ARTICLE,
+    USE_FULL_ARTICLE, USE_RRF, RRF_K,
 )
 from embed import get_chroma_collection
-from retrieval import load_models, retrieve
+from retrieval import load_models, retrieve, build_bm25_index
 from generate import _build_context, _load_prompt, _is_relevant, fetch_full_article_chunks
 
 import ollama as _ollama
@@ -34,6 +34,7 @@ _config_lock = threading.Lock()
 _runtime_config: dict = {
     "use_full_article":  USE_FULL_ARTICLE,
     "use_reranking":     USE_RERANKING,
+    "use_rrf":           USE_RRF,
     "top_k_retrieval":   EVAL_TOP_K_RETRIEVAL,
     "top_k_final":       EVAL_TOP_K_FINAL,
     "llm_temperature":   LLM_TEMPERATURE,
@@ -93,6 +94,8 @@ async def lifespan(app: FastAPI):
     _state["collection"]          = get_chroma_collection(CHROMA_PATH, CHROMA_COLLECTION)
     # Reranker immer laden damit er per Runtime-Config umgeschaltet werden kann
     _state["model"], _state["reranker"] = load_models(use_reranking=True)
+    # BM25-Index immer aufbauen damit RRF per Toggle aktiviert werden kann
+    _state["bm25_index"] = build_bm25_index(_state["collection"])
     _ollama.chat(
         model=LLM_MODEL,
         keep_alive=LLM_KEEP_ALIVE,
@@ -121,6 +124,7 @@ class QueryRequest(BaseModel):
 class ConfigPatch(BaseModel):
     use_full_article:  Optional[bool]  = None
     use_reranking:     Optional[bool]  = None
+    use_rrf:           Optional[bool]  = None
     top_k_retrieval:   Optional[int]   = None
     top_k_final:       Optional[int]   = None
     llm_temperature:   Optional[float] = None
@@ -224,7 +228,8 @@ def query_stream(req: QueryRequest):
         cfg = dict(_runtime_config)
 
     def event_stream():
-        reranker = _state["reranker"] if cfg["use_reranking"] else None
+        reranker   = _state["reranker"] if cfg["use_reranking"] else None
+        bm25_index = _state["bm25_index"] if cfg["use_rrf"] else None
         chunks = retrieve(
             question,
             _state["model"],
@@ -232,6 +237,8 @@ def query_stream(req: QueryRequest):
             reranker,
             top_k_retrieval=cfg["top_k_retrieval"],
             top_k_rerank=cfg["top_k_final"],
+            bm25_index=bm25_index,
+            rrf_k=RRF_K,
         )
 
         if not _is_relevant(chunks):
