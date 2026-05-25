@@ -16,8 +16,7 @@ class BM25Index:
 
 
 def build_bm25_index(collection: chromadb.Collection, batch_size: int = 5000) -> BM25Index:
-    """Lädt alle Chunks aus ChromaDB und baut einen BM25-Index. Läuft einmal pro Experiment.
-    Batching nötig wegen SQLite-Limit bei grossen Collections."""
+    """Batching nötig wegen SQLite-Limit bei grossen Collections."""
     total = collection.count()
     print(f"BM25-Index wird aufgebaut ({total:,} Chunks)...", flush=True)
 
@@ -55,16 +54,16 @@ def search_bm25(query: str, index: BM25Index, top_k: int) -> list[dict]:
 
 
 def reciprocal_rank_fusion(ranked_lists: list[list[dict]], k: int = 60) -> list[dict]:
-    """Kombiniert mehrere Ranglisten per RRF. Chunks die in beiden Listen auftauchen
-    bekommen höhere Scores — k=60 dämpft den Effekt der Top-Plätze."""
     scores:    dict[str, float] = {}
     chunk_map: dict[str, dict]  = {}
 
     for ranked_list in ranked_lists:
         for rank, chunk in enumerate(ranked_list, start=1):
             cid = f"{chunk['article_id']}_{chunk['chunk_index']}"
-            scores[cid]    = scores.get(cid, 0.0) + 1.0 / (k + rank)
-            chunk_map[cid] = chunk
+            scores[cid] = scores.get(cid, 0.0) + 1.0 / (k + rank)
+            # Erste Liste gewinnt (Dense), damit similarity_score erhalten bleibt
+            if cid not in chunk_map:
+                chunk_map[cid] = chunk
 
     return [
         {**chunk_map[cid], "rrf_score": scores[cid]}
@@ -85,7 +84,6 @@ _QUERY_INSTRUCTION = (
 
 
 def embed_query(model: SentenceTransformer, query: str) -> list[float]:
-    # Qwen3 braucht eine Task-Instruction vor der Query
     return model.encode(
         _QUERY_INSTRUCTION + query,
         normalize_embeddings=True,

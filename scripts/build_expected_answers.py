@@ -1,9 +1,3 @@
-"""Generate reference answers for ground truth entries using the full article text.
-
-Run once before experiment.py to populate expected_answer fields:
-    python scripts/build_expected_answers.py
-"""
-
 import json
 import os
 import sys

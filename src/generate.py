@@ -13,7 +13,6 @@ def _load_prompt(filename: str) -> str:
 
 
 def _merge_chunks_by_article(chunks: list[dict]) -> list[dict]:
-    """Chunks desselben Artikels zusammenführen, Reihenfolge nach Retrieval-Rank."""
     seen_articles: dict[str, dict] = {}
     ordered_ids:   list[str]       = []
 
@@ -51,8 +50,6 @@ def _build_context(chunks: list[dict]) -> str:
 
 
 def fetch_full_article_chunks(article_ids: list[str], collection) -> list[dict]:
-    """Holt alle Chunks der gegebenen Artikel aus ChromaDB, sortiert nach chunk_index.
-    Artikel-Reihenfolge entspricht dem Retrieval-Ranking."""
     if not article_ids:
         return []
 
@@ -86,6 +83,9 @@ def _is_relevant(chunks: list[dict]) -> bool:
     top = chunks[0]
     if "rerank_score" in top:
         return top["rerank_score"] >= MIN_RELEVANCE_SCORE
+    if "rrf_score" in top:
+        # similarity_score bleibt durch First-Seen-Wins in RRF erhalten (Dense zuerst)
+        return top.get("similarity_score", 0.0) >= _MIN_SIMILARITY_SCORE
     return top.get("similarity_score", 0.0) >= _MIN_SIMILARITY_SCORE
 
 

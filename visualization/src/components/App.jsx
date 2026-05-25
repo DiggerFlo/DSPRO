@@ -8,7 +8,6 @@ import CopyButton from './CopyButton.jsx';
 import LoadingDots from './LoadingDots.jsx';
 import { SunIcon, MoonIcon, ArrowIcon, ChevronUpIcon, HistoryIcon, SettingsIcon } from './Icons.jsx';
 
-// v3: sessions instead of single Q&A entries
 const HISTORY_KEY = 'nzz_history_v3';
 const MAX_HISTORY  = 20;
 
@@ -34,6 +33,14 @@ function renderInline(text, accent, dark, idPrefix) {
   });
 }
 
+function citedIds(text) {
+  const nums = new Set();
+  if (!text) return nums;
+  for (const m of text.matchAll(/\[(\d+(?:,\s*\d+)*)\]/g))
+    m[1].split(',').forEach(n => nums.add(+n.trim()));
+  return nums;
+}
+
 const isBulletLine = l => l.startsWith('- ') || l.startsWith('* ');
 
 function renderBody(text, accent, dark, idPrefix) {
@@ -54,6 +61,7 @@ function renderBody(text, accent, dark, idPrefix) {
 }
 
 function renderAnswer(text, accent, dark, idPrefix) {
+  if (!text) return null;
   const clean      = text.replace(/\*\*Quellen\*\*[\s\S]*$/, '').trim();
   const SANS_LOCAL = 'Inter,system-ui,sans-serif';
   const serif      = "'Source Serif 4',Georgia,serif";
@@ -91,7 +99,6 @@ function renderAnswer(text, accent, dark, idPrefix) {
   });
 }
 
-// ── Toggle-Row für das Settings-Panel ─────────────────────────────────────────
 function ToggleRow({ label, value, onChange, disabled, note, th }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${th.border}` }}>
@@ -142,59 +149,52 @@ export default function App() {
   const serif             = `'Source Serif 4',Georgia,serif`;
   const maxWidth          = 980;
 
-  // ── Core state ──────────────────────────────────────────────────────────────
   const [query_,          setQuery_]          = useState('');
   const [messages,        setMessages]        = useState([]);
   const [loading,         setLoading]         = useState(false);
   const [pendingQuestion, setPendingQuestion] = useState('');
   const [error,           setError]           = useState(null);
 
-  // ── Session-basierter Verlauf ────────────────────────────────────────────────
-  // Jede Session: { id, ts, messages: [{question, answer, sources, followUps}] }
   const [history,     setHistory]     = useState(loadHistory);
   const [showHistory, setShowHistory] = useState(false);
   const sessionIdRef = useRef(null); // aktuelle Session-ID
 
-  // ── Runtime-Config (vom Backend geladen, im GUI änderbar) ───────────────────
   const [config, setConfig] = useState({
     use_full_article:   false,
-    use_reranking:      true,
-    use_rrf:            false,
+    use_reranking:      false,
+    use_rrf:            true,
     top_k_retrieval:    10,
     top_k_final:        5,
     llm_temperature:    0.2,
-    show_follow_ups:    true,
+    show_follow_ups:    false,
     reranker_available: true,
   });
   const [showSettings, setShowSettings] = useState(false);
 
-  // ── Dynamic topics from backend ─────────────────────────────────────────────
-  const [topics, setTopics] = useState([]);
+  const [topics,        setTopics]        = useState([]);
+  const [topicsLoading, setTopicsLoading] = useState(true);
 
-  // ── UI state ────────────────────────────────────────────────────────────────
   const [showScrollTop,   setShowScrollTop]   = useState(false);
   const [welcomeClosing,  setWelcomeClosing]  = useState(false);
   const [showWelcome,     setShowWelcome]     = useState(() => !localStorage.getItem('nzz_welcome_seen'));
   const [isMobile,        setIsMobile]        = useState(() => window.innerWidth < 640);
 
-  // ── Refs ────────────────────────────────────────────────────────────────────
   const inputRef           = useRef();
   const abortRef           = useRef(null);
   const lastMessageRef     = useRef();
   const generationRef      = useRef(0);
   const answerAccRef       = useRef('');
 
-  // ── Load topics + config from backend on mount ───────────────────────────────
   useEffect(() => {
     fetchTopics().then(data => {
       if (data?.de?.length > 0) setTopics(data.de);
+      setTopicsLoading(false);
     });
     fetchConfig().then(cfg => {
       if (cfg) setConfig(prev => ({ ...prev, ...cfg }));
     });
   }, []);
 
-  // ── Standard effects ────────────────────────────────────────────────────────
   useEffect(() => { inputRef.current?.focus(); }, []);
 
   useEffect(() => {
@@ -239,7 +239,6 @@ export default function App() {
     document.body.style.color = th.text;
   }, [dark, th.bg, th.text]);
 
-  // ── Helpers ─────────────────────────────────────────────────────────────────
   const closeWelcome = () => {
     setWelcomeClosing(true);
     setTimeout(() => {
@@ -271,41 +270,43 @@ export default function App() {
     await updateConfig(patch);
   }, []);
 
-  /** Restore a saved session from history without a new API call. */
   const restoreConversation = useCallback(session => {
     abortRef.current?.abort();
     ++generationRef.current;
     sessionIdRef.current = session.id;
     setQuery_(''); setLoading(false); setPendingQuestion(''); setError(null);
     setMessages(session.messages.map(m => ({ ...m, done: true })));
+    setShowHistory(false);
     document.title = `${session.messages[0].question} – NZZ ContextAI`;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
     setTimeout(() => inputRef.current?.focus(), 50);
   }, []);
 
-  /** Persist a completed Q&A to the current session (or start a new one). */
   const persistToHistory = useCallback((question, answer, sources, followUps) => {
     const msg = { question, answer, sources, followUps };
+
+    // Side-effect must happen outside the updater — StrictMode calls updaters twice
+    if (sessionIdRef.current === null) {
+      sessionIdRef.current = Date.now();
+    }
+    const sessionId = sessionIdRef.current;
+
     setHistory(prev => {
       let next;
-      if (sessionIdRef.current !== null) {
-        // Zur bestehenden Session hinzufügen
+      if (prev.some(s => s.id === sessionId)) {
         next = prev.map(s =>
-          s.id === sessionIdRef.current
+          s.id === sessionId
             ? { ...s, ts: Date.now(), messages: [...s.messages, msg] }
             : s
         );
       } else {
-        // Neue Session starten
-        const newSession = { id: Date.now(), ts: Date.now(), messages: [msg] };
-        sessionIdRef.current = newSession.id;
-        next = [newSession, ...prev].slice(0, MAX_HISTORY);
+        next = [{ id: sessionId, ts: Date.now(), messages: [msg] }, ...prev].slice(0, MAX_HISTORY);
       }
       saveHistory(next);
       return next;
     });
   }, []);
 
-  // ── Submit ───────────────────────────────────────────────────────────────────
   const submit = useCallback(q => {
     const question = (q || query_).trim();
     if (!question || loading) return;
@@ -371,15 +372,12 @@ export default function App() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
   };
 
-  // ── Layout helpers ───────────────────────────────────────────────────────────
   const px          = isMobile ? '12px' : '24px';
-  const showSidebar = showHistory && history.length > 0 && !isMobile;
-  const examples    = topics.length > 0 ? topics : t.examples;
+  const showSidebar = showHistory && !isMobile;
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: th.bg, transition: 'background 0.2s,color 0.2s' }}>
 
-      {/* ── 1. Utility bar ── */}
       <div style={{ background: th.utilBg, height: 32, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
         <div style={{ maxWidth, margin: '0 auto', width: '100%', padding: `0 ${px}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <button
@@ -393,11 +391,6 @@ export default function App() {
             {history.length > 0 && <span style={{ fontSize: 10, fontFamily: SANS, letterSpacing: '0.04em' }}>{history.length}</span>}
           </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {['de', 'en'].map(l => (
-              <button key={l} onClick={() => setLang(l)} style={{ padding: '2px 8px', fontSize: 11, fontWeight: lang === l ? 600 : 400, fontFamily: SANS, border: 'none', background: 'none', cursor: 'pointer', color: lang === l ? '#fff' : th.utilText, letterSpacing: '0.04em', textTransform: 'uppercase', transition: 'color 0.15s' }}>
-                {l}
-              </button>
-            ))}
             <button
               onClick={() => setShowSettings(true)}
               title={t.settingsTitle}
@@ -414,7 +407,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── 2. Main header ── */}
       <div style={{ background: '#111', borderBottom: '1px solid #222', flexShrink: 0 }}>
         <div style={{ maxWidth, margin: '0 auto', padding: `0 ${px}`, height: 52, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <button onClick={resetChat} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: `0 ${isMobile ? '0' : '24px'}`, display: 'flex', alignItems: 'center', gap: 12, height: 52 }}>
@@ -427,9 +419,9 @@ export default function App() {
               <button
                 onClick={resetChat}
                 className="fade-up"
-                style={{ background: 'none', border: `1px solid ${th.border}`, cursor: 'pointer', fontSize: 11, color: th.textMuted, fontFamily: SANS, padding: '4px 10px', letterSpacing: '0.03em', borderRadius: 2, transition: 'all 0.15s' }}
+                style={{ background: 'none', border: '1px solid rgba(255,255,255,0.25)', cursor: 'pointer', fontSize: 11, color: 'rgba(255,255,255,0.6)', fontFamily: SANS, padding: '4px 10px', letterSpacing: '0.03em', borderRadius: 2, transition: 'all 0.15s' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#fff'; e.currentTarget.style.color = '#fff'; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = th.border; e.currentTarget.style.color = th.textMuted; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.25)'; e.currentTarget.style.color = 'rgba(255,255,255,0.6)'; }}
               >
                 {isMobile ? '↩' : `↩ ${t.newChat}`}
               </button>
@@ -437,7 +429,7 @@ export default function App() {
             {!isMobile && (
               <button
                 onClick={() => setShowWelcome(true)}
-                style={{ fontSize: 9, fontWeight: 700, color: th.accent, fontFamily: SANS, letterSpacing: '0.1em', border: `1px solid ${th.accent}`, borderRadius: 2, padding: '2px 6px', background: 'none', cursor: 'pointer', transition: 'opacity 0.15s' }}
+                style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,0.7)', fontFamily: SANS, letterSpacing: '0.1em', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 2, padding: '2px 6px', background: 'none', cursor: 'pointer', transition: 'opacity 0.15s' }}
                 onMouseEnter={e => e.currentTarget.style.opacity = '0.6'}
                 onMouseLeave={e => e.currentTarget.style.opacity = '1'}
               >
@@ -448,45 +440,59 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── 3. Body ── */}
       <div style={{ flex: 1, display: 'flex', maxWidth, margin: '0 auto', width: '100%', padding: `0 ${px}` }}>
 
-        {/* History sidebar */}
         {showSidebar && (
-          <aside className="slide-in" style={{ width: 210, flexShrink: 0, borderRight: `1px solid ${th.border}`, paddingTop: 24, paddingRight: 16, paddingBottom: 24, transition: 'border-color 0.2s' }}>
+          <aside className="slide-in" style={{ width: 210, flexShrink: 0, borderRight: `1px solid ${th.border}`, paddingTop: 24, paddingRight: 16, paddingBottom: 24, display: 'flex', flexDirection: 'column', transition: 'border-color 0.2s' }}>
             <div style={{ fontSize: 9, fontWeight: 700, color: th.textMuted, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 12, fontFamily: SANS }}>{t.history}</div>
-            {history.map((session) => (
+            <div style={{ flex: 1 }}>
+              {history.length === 0 && (
+                <div style={{ fontSize: 12, color: th.textFaint, fontFamily: SANS, lineHeight: 1.6 }}>Noch kein Verlauf vorhanden.</div>
+              )}
+              {history.map((session) => (
+                <button
+                  key={session.id}
+                  onClick={() => restoreConversation(session)}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: `1px solid ${th.border}`, cursor: 'pointer', padding: '9px 0', lineHeight: 1.45, transition: 'color 0.1s' }}
+                  onMouseEnter={e => e.currentTarget.style.color = th.accent}
+                  onMouseLeave={e => e.currentTarget.style.color = th.textMid}
+                >
+                  <div style={{ fontSize: 12, color: 'inherit', fontFamily: serif, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
+                    {session.messages[0].question}
+                  </div>
+                  <div style={{ fontSize: 10, color: th.textFaint, fontFamily: SANS, marginTop: 2, display: 'flex', gap: 6 }}>
+                    <span>{fmtDate(session.ts)}</span>
+                    {session.messages.length > 1 && (
+                      <span>· {session.messages.length} Fragen</span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+            {history.length > 0 && (
               <button
-                key={session.id}
-                onClick={() => restoreConversation(session)}
-                style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: `1px solid ${th.border}`, cursor: 'pointer', padding: '9px 0', lineHeight: 1.45, transition: 'color 0.1s' }}
-                onMouseEnter={e => e.currentTarget.style.color = th.accent}
-                onMouseLeave={e => e.currentTarget.style.color = th.textMid}
+                onClick={() => { saveHistory([]); setHistory([]); }}
+                style={{ marginTop: 16, width: '100%', padding: '7px 0', fontSize: 10, fontWeight: 700, fontFamily: SANS, letterSpacing: '0.06em', textTransform: 'uppercase', color: th.textFaint, background: 'none', border: `1px solid ${th.border}`, cursor: 'pointer', transition: 'color 0.15s, border-color 0.15s' }}
+                onMouseEnter={e => { e.currentTarget.style.color = '#c0392b'; e.currentTarget.style.borderColor = '#c0392b'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = th.textFaint; e.currentTarget.style.borderColor = th.border; }}
               >
-                <div style={{ fontSize: 12, color: 'inherit', fontFamily: serif, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
-                  {session.messages[0].question}
-                </div>
-                <div style={{ fontSize: 10, color: th.textFaint, fontFamily: SANS, marginTop: 2, display: 'flex', gap: 6 }}>
-                  <span>{fmtDate(session.ts)}</span>
-                  {session.messages.length > 1 && (
-                    <span>· {session.messages.length} Fragen</span>
-                  )}
-                </div>
+                Verlauf löschen
               </button>
-            ))}
+            )}
           </aside>
         )}
 
         <main style={{ flex: 1, paddingTop: 32, paddingBottom: 80, paddingLeft: showSidebar ? 24 : 0, maxWidth: 660 }}>
 
-          {/* Empty state */}
           {messages.length === 0 && !loading && !error && (
             <div className="fade-up">
               <h1 style={{ fontFamily: serif, fontSize: isMobile ? 22 : 30, fontWeight: 600, lineHeight: 1.2, color: th.text, marginBottom: 10, letterSpacing: '-0.02em' }}>{t.headline}</h1>
               <p style={{ fontSize: 14, color: th.textMid, lineHeight: 1.7, marginBottom: 28, fontFamily: SANS, maxWidth: 520 }}>{t.subhead}</p>
               <div style={{ borderTop: `2px solid ${th.text}`, paddingTop: 16, transition: 'border-color 0.2s' }}>
                 <div style={{ fontSize: 9, fontWeight: 700, color: th.textMuted, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 14, fontFamily: SANS }}>{t.examplesLabel}</div>
-                {examples.map((q, i) => (
+                {topicsLoading ? (
+                  <div style={{ fontSize: 13, color: th.textFaint, fontFamily: SANS, padding: '10px 0' }}>{t.examplesLoading}</div>
+                ) : topics.map((q, i) => (
                   <button key={i} onClick={() => submit(q)} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, width: '100%', background: 'none', border: 'none', borderBottom: `1px solid ${th.border}`, padding: '13px 0', cursor: 'pointer', textAlign: 'left', transition: 'color 0.12s', color: th.text }}
                     onMouseEnter={e => { e.currentTarget.style.color = th.accent; e.currentTarget.querySelector('.arr').style.color = th.accent; }}
                     onMouseLeave={e => { e.currentTarget.style.color = th.text; e.currentTarget.querySelector('.arr').style.color = th.textFaint; }}
@@ -499,7 +505,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Error state */}
           {error && !loading && (
             <div className="fade-up" style={{ padding: '20px 0' }}>
               <div style={{ border: `1px solid ${th.border}`, borderLeft: `3px solid #c0392b`, padding: '14px 16px', background: th.surface }}>
@@ -512,7 +517,6 @@ export default function App() {
             </div>
           )}
 
-          {/* Conversation */}
           {messages.map((msg, idx) => {
             const idPrefix = `msg-${idx}`;
             const isLast   = idx === messages.length - 1;
@@ -534,9 +538,15 @@ export default function App() {
                     <div style={{ borderTop: `2px solid ${th.text}`, paddingTop: 12, transition: 'border-color 0.2s' }}>
                       <div style={{ fontSize: 9, fontWeight: 700, color: th.textMuted, letterSpacing: '0.12em', textTransform: 'uppercase', fontFamily: SANS }}>{t.sourcesLabel}</div>
                     </div>
-                    {msg.sources.map((s, i) => (
-                      <SourceCard key={s.id} source={s} index={i} th={th} serif={serif} relevanceLabel={t.relevance} dark={dark} idPrefix={idPrefix} />
-                    ))}
+                    {(() => {
+                      const cited = citedIds(msg.answer);
+                      const visible = cited.size > 0
+                        ? msg.sources.filter(s => cited.has(s.id))
+                        : msg.sources;
+                      return visible.map((s, i) => (
+                        <SourceCard key={s.id} source={s} index={i} th={th} serif={serif} relevanceLabel={t.relevance} dark={dark} idPrefix={idPrefix} />
+                      ));
+                    })()}
                     {config.show_follow_ups && msg.followUps?.length > 0 && isLast && !loading && (
                       <div className="fade-up" style={{ marginTop: 28 }}>
                         <div style={{ fontSize: 9, fontWeight: 700, color: th.textMuted, letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 10, fontFamily: SANS }}>{t.followUpsLabel}</div>
@@ -557,7 +567,6 @@ export default function App() {
             );
           })}
 
-          {/* Loading state */}
           {loading && (
             <div className="fade-up" style={{ marginBottom: 56, paddingTop: messages.length > 0 ? 32 : 0, borderTop: messages.length > 0 ? `1px solid ${th.border}` : 'none' }}>
               <div style={{ borderTop: `2px solid ${th.text}`, paddingTop: 14, marginBottom: 16 }}>
@@ -570,7 +579,6 @@ export default function App() {
         </main>
       </div>
 
-      {/* ── 4. Input bar ── */}
       <div style={{ position: 'sticky', bottom: 0, background: `linear-gradient(transparent,${th.bg} 32%)`, padding: `16px ${px} 22px`, transition: 'background 0.2s' }}>
         <div style={{ maxWidth, margin: '0 auto' }}>
           <div style={{ paddingLeft: showSidebar ? 234 : 0 }}>
@@ -601,7 +609,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── 5. Footer ── */}
       <div style={{ background: th.footerBg, borderTop: `1px solid ${th.border}`, padding: `16px ${px}`, transition: 'background 0.2s,border-color 0.2s' }}>
         <div style={{ maxWidth, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 12 : 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -627,7 +634,6 @@ export default function App() {
         </div>
       </div>
 
-      {/* ── Scroll to top ── */}
       {showScrollTop && (
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
@@ -641,7 +647,39 @@ export default function App() {
         </button>
       )}
 
-      {/* ── Settings modal ── */}
+      {showHistory && isMobile && (
+        <div
+          onClick={() => setShowHistory(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(3px)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}
+        >
+          <div className="fade-up" onClick={e => e.stopPropagation()} style={{ background: th.surface, maxHeight: '70vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', borderTopLeftRadius: 12, borderTopRightRadius: 12, boxShadow: '0 -8px 32px rgba(0,0,0,0.28)' }}>
+            <div style={{ background: '#111', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', fontFamily: SANS, letterSpacing: '0.08em', textTransform: 'uppercase' }}>{t.history}</span>
+              <button onClick={() => setShowHistory(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ overflowY: 'auto', padding: '8px 20px 20px' }}>
+              {history.length === 0 ? (
+                <div style={{ padding: '20px 0', fontSize: 13, color: th.textFaint, fontFamily: SANS, textAlign: 'center' }}>Noch kein Verlauf vorhanden</div>
+              ) : history.map(session => (
+                <button
+                  key={session.id}
+                  onClick={() => { restoreConversation(session); setShowHistory(false); }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: `1px solid ${th.border}`, cursor: 'pointer', padding: '12px 0', lineHeight: 1.45 }}
+                >
+                  <div style={{ fontSize: 14, color: th.text, fontFamily: serif, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {session.messages[0].question}
+                  </div>
+                  <div style={{ fontSize: 11, color: th.textFaint, fontFamily: SANS, marginTop: 3, display: 'flex', gap: 6 }}>
+                    <span>{fmtDate(session.ts)}</span>
+                    {session.messages.length > 1 && <span>· {session.messages.length} Fragen</span>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showSettings && (
         <div
           onClick={() => setShowSettings(false)}
@@ -653,6 +691,20 @@ export default function App() {
               <button onClick={() => setShowSettings(false)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
             </div>
             <div style={{ padding: '8px 20px 20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${th.border}` }}>
+                <span style={{ fontSize: 13, color: th.text, fontFamily: SANS }}>{t.settingsLanguage}</span>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {['de', 'en'].map(l => (
+                    <button
+                      key={l}
+                      onClick={() => setLang(l)}
+                      style={{ padding: '3px 10px', fontSize: 11, fontWeight: 700, fontFamily: SANS, letterSpacing: '0.06em', textTransform: 'uppercase', border: `1px solid ${lang === l ? th.accent : th.border}`, background: lang === l ? th.accent : 'none', color: lang === l ? (dark ? '#000' : '#fff') : th.textMuted, cursor: 'pointer', borderRadius: 2, transition: 'all 0.15s' }}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <ToggleRow
                 label={t.settingsFollowUps}
                 value={config.show_follow_ups}
@@ -711,7 +763,6 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Welcome modal ── */}
       {showWelcome && (
         <div
           onClick={closeWelcome}

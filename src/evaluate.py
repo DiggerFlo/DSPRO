@@ -7,7 +7,6 @@ def load_ground_truth(path: str) -> list[dict]:
 
 
 def _dedupe_article_ids(results: list[dict]) -> list[str]:
-    # Mehrere Chunks pro Artikel → nur einmal zählen, Reihenfolge beibehalten
     seen = []
     for r in results:
         if r["article_id"] not in seen:
@@ -37,9 +36,6 @@ def evaluate_retrieval(results: list[dict], relevant_ids: list[str], k: int = 5)
 
 
 def evaluate_faithfulness(answer: str, context_chunks: list[dict]) -> dict:
-    """Misst wie stark die Antwort im Kontext verankert ist.
-    Zählt den Anteil der Antwort-Tokens (>3 Zeichen) die im Kontext vorkommen.
-    1.0 = vollständig aus Quellen, 0.0 = kein Überlapp."""
     context_tokens = set(
         " ".join(c["chunk_text"] for c in context_chunks).lower().split()
     )

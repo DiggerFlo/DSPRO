@@ -3,8 +3,6 @@ import { getResponse } from './mock.js';
 const USE_MOCK = import.meta.env.VITE_USE_MOCK !== 'false';
 const API_URL  = import.meta.env.VITE_API_URL;
 
-// ── Config ────────────────────────────────────────────────────────────────────
-
 export async function fetchConfig() {
   if (USE_MOCK || !API_URL) return null;
   try {
@@ -27,12 +25,6 @@ export async function updateConfig(changes) {
   } catch { /* ignore */ }
 }
 
-// ── Topics ────────────────────────────────────────────────────────────────────
-
-/**
- * Fetch LLM-generated example questions from the backend.
- * Returns { de: string[], en: string[] } — empty arrays if unavailable.
- */
 export async function fetchTopics() {
   if (USE_MOCK || !API_URL) return { de: [], en: [] };
   try {
@@ -44,19 +36,6 @@ export async function fetchTopics() {
   }
 }
 
-// ── Streaming query ───────────────────────────────────────────────────────────
-
-/**
- * Async generator that streams a RAG response token by token.
- *
- * Yields:
- *   { type: 'token',  content: string }
- *   { type: 'done',   sources: Source[], followUps: string[] }
- *
- * Source shape: { id, title, date, snippet, score, article_id, category, author }
- *
- * Pass an AbortSignal to cancel mid-stream.
- */
 export async function* queryStream(question, signal) {
   if (USE_MOCK || !API_URL) {
     const data = getResponse(question);
@@ -95,5 +74,9 @@ export async function* queryStream(question, signal) {
       if (!line.startsWith('data: ')) continue;
       try { yield JSON.parse(line.slice(6)); } catch { /* skip malformed */ }
     }
+  }
+  // Flush remaining buffer (backend may omit trailing newline after last event)
+  if (buffer.startsWith('data: ')) {
+    try { yield JSON.parse(buffer.slice(6)); } catch { /* skip malformed */ }
   }
 }

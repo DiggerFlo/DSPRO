@@ -21,18 +21,15 @@ export default function SourceCard({ source, index, th, serif, relevanceLabel, d
         onMouseLeave={e => e.currentTarget.style.opacity = '1'}
         style={{ cursor: 'pointer', display: 'grid', gridTemplateColumns: '22px 1fr 14px', gap: '0 10px', alignItems: 'start', transition: 'opacity 0.15s' }}
       >
-        {/* Number badge */}
         <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 22, height: 22, background: th.accent, color: dark ? '#000' : '#fff', fontSize: 10, fontWeight: 700, flexShrink: 0, marginTop: 2 }}>
           {source.id}
         </span>
 
         <div>
-          {/* Title */}
           <div style={{ fontSize: 14, fontWeight: 600, color: th.text, lineHeight: 1.4, marginBottom: 5, fontFamily: serif }}>
             {source.title}
           </div>
 
-          {/* Meta row: date · category · relevance bar */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 11, color: th.textMuted, fontFamily: 'Inter,sans-serif' }}>
               {source.date}
@@ -45,7 +42,6 @@ export default function SourceCard({ source, index, th, serif, relevanceLabel, d
                 </span>
               </>
             )}
-            {/* Relevance score from reranker */}
             <span style={{ fontSize: 11, color: th.textFaint }}>·</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
               <span style={{ fontSize: 11, color: th.textMuted, fontFamily: 'Inter,sans-serif' }}>{relevanceLabel}:</span>
@@ -56,7 +52,6 @@ export default function SourceCard({ source, index, th, serif, relevanceLabel, d
             </div>
           </div>
 
-          {/* Expandable snippet */}
           {open && (
             <p className="slide-down" style={{ marginTop: 10, fontSize: 13, color: th.textMid, lineHeight: 1.7, fontFamily: 'Inter,sans-serif', borderLeft: `2px solid ${th.accent}`, paddingLeft: 10 }}>
               {source.snippet}

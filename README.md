@@ -8,6 +8,16 @@
 
 ---
 
+## Problem Statement
+
+NZZ journalists and editors work with a growing archive of tens of thousands of articles. Finding relevant prior reporting requires manual keyword searches across disparate tools — a slow, context-blind process that fails whenever the query intent does not match the exact wording in the article (vocabulary mismatch). A journalist asking *"How did the SNB respond to the strong franc?"* will miss dozens of relevant articles that discuss the topic without using the word "respond".
+
+**Goal:** Replace keyword search with a RAG pipeline that understands the *meaning* of a query — not just its tokens — so journalists can ask questions in natural language and receive source-backed answers within seconds, regardless of how the archive authors phrased the same topic.
+
+**Target users:** NZZ journalists and editors who need to cross-reference the archive during story research.
+
+---
+
 ## Screenshots
 
 | Welcome Screen | Example Query & Answer | Sources |
@@ -58,6 +68,7 @@ nzz-contextai/
 │   └── build_expected_answers.py  # Generate reference answers for ground truth
 ├── notebooks/
 │   ├── Pipeline.ipynb             # Run the full pipeline (Ingest → Eval → Query)
+│   ├── Baseline Evaluation.ipynb  # Compare Random / BM25 / Dense / RRF strategies
 │   ├── Explorer Notebook.ipynb    # Inspect raw data & debug retrieval
 │   └── Data Exploration.ipynb     # Dataset statistics & charts
 ├── demo/
@@ -166,7 +177,20 @@ All default parameters are defined in [`src/config.py`](src/config.py). Runtime 
 
 ---
 
-## Evaluation & MLflow
+## Baseline & Evaluation
+
+### Baseline comparison
+
+`notebooks/Baseline Evaluation.ipynb` benchmarks four retrieval strategies on the same ground-truth queries to prove the production pipeline outperforms simple heuristics:
+
+| Strategy | Description |
+|---|---|
+| Random | Uniformly sampled articles — absolute lower bound |
+| BM25 Keyword | Classic term-frequency matching, no embeddings |
+| Dense Semantic | Vector search only (Qwen3-Embedding-0.6B) |
+| **Dense + RRF** | Dense + BM25 fused via Reciprocal Rank Fusion **(production)** |
+
+### MLflow metrics
 
 The following metrics are logged per run:
 

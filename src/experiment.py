@@ -139,7 +139,6 @@ def run_experiment(run_name: str = None) -> None:
         if generation_metrics_list:
             mlflow.log_metrics(_average(generation_metrics_list))
 
-        # Per-Query Ergebnisse als CSV-Artifact speichern
         csv_buffer = io.StringIO()
         writer     = csv.DictWriter(csv_buffer, fieldnames=per_query_rows[0].keys())
         writer.writeheader()

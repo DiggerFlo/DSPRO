@@ -1,5 +1,3 @@
-"""NZZ ContextAI — Query Pipeline Entry Point"""
-
 import argparse
 from dotenv import load_dotenv
 
@@ -15,7 +13,6 @@ from src.generate import generate
 
 
 def run_pipeline(query: str) -> str:
-    """Run the full RAG pipeline for a given query and return the answer."""
     collection      = get_chroma_collection(CHROMA_PATH, CHROMA_COLLECTION)
     model, reranker = load_models(use_reranking=USE_RERANKING)
 

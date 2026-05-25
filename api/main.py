@@ -29,7 +29,6 @@ import ollama as _ollama
 _state:  dict      = {}
 _topics: list[str] = []
 
-# ── Runtime config (can be changed via PATCH /config without restart) ─────────
 _config_lock = threading.Lock()
 _runtime_config: dict = {
     "use_full_article":  USE_FULL_ARTICLE,
@@ -38,7 +37,7 @@ _runtime_config: dict = {
     "top_k_retrieval":   EVAL_TOP_K_RETRIEVAL,
     "top_k_final":       EVAL_TOP_K_FINAL,
     "llm_temperature":   LLM_TEMPERATURE,
-    "show_follow_ups":   True,
+    "show_follow_ups":   False,
 }
 
 
@@ -92,9 +91,7 @@ def _generate_topics() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _state["collection"]          = get_chroma_collection(CHROMA_PATH, CHROMA_COLLECTION)
-    # Reranker immer laden damit er per Runtime-Config umgeschaltet werden kann
     _state["model"], _state["reranker"] = load_models(use_reranking=True)
-    # BM25-Index immer aufbauen damit RRF per Toggle aktiviert werden kann
     _state["bm25_index"] = build_bm25_index(_state["collection"])
     _ollama.chat(
         model=LLM_MODEL,
@@ -148,12 +145,19 @@ def _format_date(iso: str) -> str:
         return iso
 
 
+_MIN_SOURCE_SCORE = 5
+
 def _build_sources(chunks: list[dict]) -> list[dict]:
     seen: dict[str, dict] = {}
     for chunk in chunks:
         aid = chunk["article_id"]
         if aid not in seen or _to_pct(chunk) > _to_pct(seen[aid]):
             seen[aid] = chunk
+
+    deduped = list(seen.values())
+    # Nur Quellen über Mindestscore — aber mindestens die beste Quelle behalten
+    filtered = [c for c in deduped if _to_pct(c) >= _MIN_SOURCE_SCORE] or deduped[:1]
+
     return [
         {
             "id":         i,
@@ -165,7 +169,7 @@ def _build_sources(chunks: list[dict]) -> list[dict]:
             "category":   chunk.get("category", ""),
             "author":     chunk.get("author", ""),
         }
-        for i, chunk in enumerate(seen.values(), 1)
+        for i, chunk in enumerate(filtered, 1)
     ]
 
 
@@ -243,7 +247,7 @@ def query_stream(req: QueryRequest):
 
         if not _is_relevant(chunks):
             yield _sse({"type": "token", "content": "Zu dieser Anfrage wurden keine ausreichend relevanten Artikel im NZZ-Archiv gefunden."})
-            yield _sse({"type": "done", "sources": [], "followUps": []})
+            yield _sse({"type": "done", "sources": _build_sources(chunks), "followUps": []})
             return
 
         if cfg["use_full_article"]:
