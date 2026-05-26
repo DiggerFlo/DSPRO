@@ -184,6 +184,7 @@ export default function App() {
   const lastMessageRef     = useRef();
   const generationRef      = useRef(0);
   const answerAccRef       = useRef('');
+  const scrollContainerRef = useRef();
 
   useEffect(() => {
     fetchTopics().then(data => {
@@ -204,9 +205,11 @@ export default function App() {
   }, [messages]);
 
   useEffect(() => {
-    const h = () => setShowScrollTop(window.scrollY > 320);
-    window.addEventListener('scroll', h);
-    return () => window.removeEventListener('scroll', h);
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const h = () => setShowScrollTop(container.scrollTop > 320);
+    container.addEventListener('scroll', h);
+    return () => container.removeEventListener('scroll', h);
   }, []);
 
   useEffect(() => {
@@ -376,7 +379,7 @@ export default function App() {
   const showSidebar = showHistory && !isMobile;
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: th.bg, transition: 'background 0.2s,color 0.2s' }}>
+    <div style={{ height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: th.bg, transition: 'background 0.2s,color 0.2s' }}>
 
       <div style={{ background: th.utilBg, height: 32, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
         <div style={{ maxWidth, margin: '0 auto', width: '100%', padding: `0 ${px}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -440,7 +443,8 @@ export default function App() {
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', maxWidth, margin: '0 auto', width: '100%', padding: `0 ${px}` }}>
+      <div ref={scrollContainerRef} style={{ flex: 1, overflowY: 'auto' }}>
+      <div style={{ display: 'flex', maxWidth, margin: '0 auto', width: '100%', padding: `0 ${px}` }}>
 
         {showSidebar && (
           <aside className="slide-in" style={{ width: 210, flexShrink: 0, borderRight: `1px solid ${th.border}`, paddingTop: 24, paddingRight: 16, paddingBottom: 24, display: 'flex', flexDirection: 'column', transition: 'border-color 0.2s' }}>
@@ -578,8 +582,9 @@ export default function App() {
           )}
         </main>
       </div>
+      </div>
 
-      <div style={{ position: 'sticky', bottom: 0, background: `linear-gradient(transparent,${th.bg} 32%)`, padding: `16px ${px} 22px`, transition: 'background 0.2s' }}>
+      <div style={{ background: `linear-gradient(transparent,${th.bg} 32%)`, padding: `16px ${px} 22px`, transition: 'background 0.2s', flexShrink: 0 }}>
         <div style={{ maxWidth, margin: '0 auto' }}>
           <div style={{ paddingLeft: showSidebar ? 234 : 0 }}>
             <div
@@ -636,7 +641,7 @@ export default function App() {
 
       {showScrollTop && (
         <button
-          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+          onClick={() => scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
           className="fade-up"
           style={{ position: 'fixed', bottom: isMobile ? 90 : 100, right: isMobile ? 12 : 20, zIndex: 100, width: 40, height: 40, borderRadius: '50%', background: th.surface, border: `1px solid ${th.border}`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 2px 12px rgba(0,0,0,${dark ? 0.4 : 0.1})`, transition: 'all 0.15s' }}
           onMouseEnter={e => e.currentTarget.style.borderColor = th.text}
