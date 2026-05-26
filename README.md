@@ -154,7 +154,7 @@ make experiment
 make mlflow
 
 # Legacy Streamlit demo
-make demo
+make dev
 ```
 
 Or run everything from the notebook: `notebooks/Pipeline.ipynb`
