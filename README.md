@@ -152,9 +152,6 @@ make experiment
 
 # Open MLflow UI → http://localhost:5000
 make mlflow
-
-# Legacy Streamlit demo
-make dev
 ```
 
 Or run everything from the notebook: `notebooks/Pipeline.ipynb`
@@ -196,17 +193,11 @@ The following metrics are logged per run:
 
 | Metric | Description |
 |---|---|
-| `hit_at_1/3/5` | Does the correct article appear in top-K results? |
+| `hit_at_1/5` | Does the correct article appear in top-K results? |
 | `mrr` | Mean Reciprocal Rank |
 | `precision_at_5` | Fraction of relevant chunks in top-5 |
 | `recall_at_5` | Coverage of relevant articles |
-| `ndcg_at_5` | Normalized Discounted Cumulative Gain |
 | `faithfulness` | How well the answer is grounded in retrieved sources |
-| `rouge_l_approx` | Token overlap against the reference answer |
-
-**Current results (Dec. 2025, 1,763 articles):**  
-Hit@1: **86%** · Hit@3: **100%** · MRR: **0.917** · NDCG@5: **0.938**
-
 ---
 
 ## License
